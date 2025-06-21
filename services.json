@@ -1,0 +1,965 @@
+[{
+        "platform": "Instagram",
+        "category": "Views",
+        "service": "Instagram Views FAST",
+        "price": 3,
+        "min": 100,
+        "max": 20000000,
+        "api_service_id": 7563
+    },
+    {
+        "platform": "Instagram",
+        "category": "Views",
+        "service": "Instagram Reels Views - slow service",
+        "price": 1,
+        "api_service_id": 7518,
+        "min": 100,
+        "max": 7000000
+    },
+    {
+        "platform": "Instagram",
+        "category": "Views",
+        "service": "Instagram Views slow - cheapest",
+        "price": 2,
+        "min": 100,
+        "max": 7000000,
+        "api_service_id": 7518
+    },
+    {
+        "platform": "Instagram",
+        "category": "Followers",
+        "service": "Instagram Followers 100% Old Accounts With 15 Post",
+        "price": 166
+    },
+    {
+        "platform": "Instagram",
+        "category": "Followers",
+        "service": "Instagram Followers 100% Old Accounts with 15 Posts 365 Days",
+        "price": 170
+    },
+    {
+        "platform": "Instagram",
+        "category": "Followers",
+        "service": "Instagram Followers 100% Old Accounts With 365 Days Refill",
+        "price": 168
+    },
+    {
+        "platform": "Instagram",
+        "category": "Followers",
+        "service": "Instagram Followers 100% Old Accounts With 15 post One click Done",
+        "price": 174
+    },
+    {
+        "platform": "Instagram",
+        "category": "Followers",
+        "service": "Instagram Followers 100% Old Account With 15 Post Lifetime Refill",
+        "price": 166
+    },
+    {
+        "platform": "Instagram",
+        "category": "Followers",
+        "service": "Instagram Followers 100% Old Account With 15 Post 365 Days R",
+        "price": 192
+    },
+    {
+        "platform": "Instagram",
+        "category": "Followers",
+        "service": "Instagram Followers [INDIAN] [Max 10K] [HQ]",
+        "price": 350,
+        "min": 100,
+        "max": 10000,
+        "api_service_id": 7346
+    },
+    {
+        "platform": "Instagram",
+        "category": "Followers",
+        "service": "Instagram Followers 100% Indian",
+        "price": 349
+    },
+    {
+        "platform": "Instagram",
+        "category": "Followers",
+        "service": "Instagram Followers 100% Indian Real & Active Accounts",
+        "price": 373,
+        "api_service_id": 7314,
+        "min": 100,
+        "max": 500000
+    },
+    {
+        "platform": "Instagram",
+        "category": "Followers",
+        "service": "Instagram Indian Followers [ Real Active ] [ Flag Off ] Lifetime Refill",
+        "price": 482,
+        "min": 10,
+        "max": 3000000,
+        "api_service_id": 7351
+    },
+    {
+        "platform": "Instagram",
+        "category": "Followers",
+        "service": "Instagram Indian Followers [ 100% Real & Active ] [ R365 ]",
+        "price": 382,
+        "min": 100,
+        "max": 500000,
+        "api_service_id": 7314
+    },
+    {
+        "platform": "Instagram",
+        "category": "Followers",
+        "service": "Instagram Followers 100% Old Account With 15 Posts (best for Big base)",
+        "price": 178
+    },
+    {
+        "platform": "Instagram",
+        "category": "Followers",
+        "service": "Instagram Followers 100% Old Account With 15 Post [Non-Drop] Rocket Speed",
+        "price": 219
+    },
+    {
+        "platform": "Instagram",
+        "category": "Followers",
+        "service": "Instagram Followers Old Account 365R",
+        "price": 190
+    },
+    {
+        "platform": "Instagram",
+        "category": "Likes",
+        "service": "Instagram Likes (Old DP Accounts) [Nice Quality] Instant",
+        "price": 8,
+        "api_service_id": 7420,
+        "min": 10,
+        "max": 5000000
+    },
+    {
+        "platform": "Instagram",
+        "category": "Likes",
+        "service": "Instagram Indian Likes HQ Indian",
+        "price": 59,
+        "api_service_id": 7541,
+        "min": 50,
+        "max": 100000
+    },
+    {
+        "platform": "Instagram",
+        "category": "Likes",
+        "service": "Instagram likes 100% Indian",
+        "price": 30,
+        "api_service_id": 7276,
+        "min": 5,
+        "max": 5000
+    },
+    {
+        "platform": "Instagram",
+        "category": "Likes",
+        "service": "Instagram Girls Like Active Real Indian Women [Female]",
+        "price": 88,
+        "api_service_id": 7309,
+        "min": 50,
+        "max": 3000
+    },
+    {
+        "platform": "Instagram",
+        "category": "Likes",
+        "service": "Instagram Like SUPER QUALITY",
+        "price": 7,
+        "api_service_id": 7563,
+        "min": 100,
+        "max": 20000000
+    },
+    {
+        "platform": "Instagram",
+        "category": "Likes",
+        "service": "INSTAGRAM LIKE - Old Accounts - Speed: 1M/D - Zero Drops Instant",
+        "price": 7,
+        "api_service_id": 7513,
+        "min": 10,
+        "max": 300000
+    },
+    {
+        "platform": "Instagram",
+        "category": "Comments",
+        "service": "Instagram Indian comments",
+        "price": 1178,
+        "min": 5,
+        "max": 5000,
+        "api_service_id": 7276
+    },
+    {
+        "platform": "Instagram",
+        "category": "Comments",
+        "service": "Instagram Custom Comments (Indian Profile)",
+        "price": 603
+    },
+    {
+        "platform": "Instagram",
+        "category": "Comments",
+        "service": "Instagram CUSTOM Comments [Quality: Original Profile]",
+        "price": 578
+    },
+    {
+        "platform": "Instagram",
+        "category": "Story",
+        "service": "Instagram Story Views 100% Indian Quality Instant Start",
+        "price": 48,
+        "api_service_id": 7286,
+        "min": 100,
+        "max": 50000
+    },
+    {
+        "platform": "Instagram",
+        "category": "Story",
+        "service": "Instagram Story Views All Stories",
+        "price": 14,
+        "min": 100,
+        "max": 400000,
+        "api_service_id": 7283
+    },
+    {
+        "platform": "Instagram",
+        "category": "Story",
+        "service": "Instagram Story Views + Impression Max 50K Fast Instant",
+        "price": 29,
+        "min": 100,
+        "max": 50000,
+        "api_service_id": 7286
+    },
+    {
+        "platform": "Instagram",
+        "category": "Story",
+        "service": "Instagram Story Poll Votes (Option 1)",
+        "price": 135,
+        "api_service_id": 7279,
+        "min": 100,
+        "max": 500000
+    },
+    {
+        "platform": "Instagram",
+        "category": "Story",
+        "service": "Instagram Story Poll Votes (Option 2)",
+        "price": 136,
+        "api_service_id": 7280,
+        "min": 100,
+        "max": 500000
+    },
+    {
+        "platform": "Instagram",
+        "category": "Story",
+        "service": "Instagram Story Poll Votes (Option 3)",
+        "price": 111,
+        "api_service_id": 7281,
+        "min": 100,
+        "max": 500000
+    },
+    {
+        "platform": "Instagram",
+        "category": "Story",
+        "service": "Instagram Story Poll Votes (Option 4)",
+        "price": 111,
+        "api_service_id": 7282,
+        "min": 100,
+        "max": 500000
+    },
+    {
+        "platform": "Instagram",
+        "category": "Shares/Saves",
+        "service": "Instagram Share [Max 10M] Instant Lifetime Refill",
+        "price": 8,
+        "api_service_id": 7488,
+        "min": 10,
+        "max": 10000000
+    },
+    {
+        "platform": "Instagram",
+        "category": "Shares/Saves",
+        "service": "Instagram Shares [Max 5M] Super Fast 30 Days",
+        "price": 3,
+        "api_service_id": 7487,
+        "min": 100,
+        "max": 5000000
+    },
+    {
+        "platform": "Instagram",
+        "category": "Shares/Saves",
+        "service": "Instagram Shares [10M] [Ultrafast] [Own Server]",
+        "price": 64,
+        "min": 10,
+        "max": 100000000,
+        "api_service_id": 7402
+    },
+    {
+        "platform": "Instagram",
+        "category": "Shares/Saves",
+        "service": "Instagram Save Super Fast Speed 2K per Day",
+        "price": 2,
+        "api_service_id": 7403,
+        "min": 10,
+        "max": 100000
+    },
+    {
+        "platform": "Instagram",
+        "category": "Shares/Saves",
+        "service": "Instagram Shares - CHEAPEST IN THE MARKET",
+        "price": 21
+    },
+    {
+        "platform": "Instagram",
+        "category": "Channel",
+        "service": "Instagram Channel Member (All Countries)",
+        "price": 114,
+        "api_service_id": 7315,
+        "min": 10,
+        "max": 1000000
+    },
+    {
+        "platform": "YouTube",
+        "category": "Subscribers",
+        "service": "Youtube Subscribes [Non-Drop] 100/200 Day Lifetime Refill",
+        "price": 579,
+        "api_service_id": 7532,
+        "min": 1000,
+        "max": 700000
+    },
+    {
+        "platform": "YouTube",
+        "category": "Subscribers",
+        "service": "Youtube Subscribes [Non-Drop] 50/100 Day Lifetime Refill",
+        "price": 565,
+        "api_service_id": 7532,
+        "min": 1000,
+        "max": 700000
+    },
+    {
+        "platform": "YouTube",
+        "category": "Subscribers",
+        "service": "Youtube Subscribes [Non-Drop] Lifetime Refill",
+        "price": 659,
+        "api_service_id": 7460,
+        "min": 100,
+        "max": 200000
+    },
+    {
+        "platform": "YouTube",
+        "category": "Subscribers",
+        "service": "Youtube Subscribes [Non-Drop] 1 Lifetime Refill",
+        "price": 720,
+        "api_service_id": 7460,
+        "min": 100,
+        "max": 200000
+    },
+    {
+        "platform": "YouTube",
+        "category": "Subscribers",
+        "service": "Youtube Subscribes [Non-Drop] 3K/5K Day Lifetime Refill",
+        "price": 936,
+        "api_service_id": 7532,
+        "min": 1000,
+        "max": 700000
+    },
+    {
+        "platform": "YouTube",
+        "category": "Subscribers",
+        "service": "Youtube Subscribes [Non-Drop] Lifetime Refill One click Start",
+        "price": 1498,
+        "api_service_id": 7460,
+        "min": 100,
+        "max": 200000
+    },
+    {
+        "platform": "YouTube",
+        "category": "Subscribers",
+        "service": "YouTube Subscribers NonDrop Lifetime Refill",
+        "price": 581,
+        "api_service_id": 7460,
+        "min": 100,
+        "max": 200000
+    },
+    {
+        "platform": "YouTube",
+        "category": "Subscribers",
+        "service": "YouTube Subscribers 90 Days Refill World Cheapest",
+        "price": 720
+    },
+    {
+        "platform": "YouTube",
+        "category": "Subscribers",
+        "service": "YouTube Subscribers NonDrop 300/500 Day Lifetime Refill",
+        "price": 763,
+        "api_service_id": 7460,
+        "min": 100,
+        "max": 200000
+    },
+    {
+        "platform": "YouTube",
+        "category": "Subscribers",
+        "service": "YouTube Subscribers Lifetime Refill Always Instant Start",
+        "price": 613
+    },
+    {
+        "platform": "YouTube",
+        "category": "Subscribers",
+        "service": "YouTube Subscribers 100% NonDrop 1k/1500Day Lifetime Refill",
+        "price": 1728,
+        "api_service_id": 7460,
+        "min": 100,
+        "max": 200000
+    },
+    {
+        "platform": "YouTube",
+        "category": "Subscribers",
+        "service": "YouTube Subscribers [Stable] Ultra Fast 1k/3k Days",
+        "price": 1800,
+        "api_service_id": 7460,
+        "min": 100,
+        "max": 200000
+    },
+    {
+        "platform": "YouTube",
+        "category": "Subscribers",
+        "service": "YouTube Subscribers [NonDrop] UltraFast 500~1k days",
+        "price": 1938,
+        "api_service_id": 7460,
+        "min": 100,
+        "max": 200000
+    },
+    {
+        "platform": "YouTube",
+        "category": "Subscribers",
+        "service": "YouTube Subscribers Indian Mix Apk Data [Non-Drop]",
+        "price": 2218
+    },
+    {
+        "platform": "YouTube",
+        "category": "Video Likes/Views",
+        "service": "YouTube Likes [ Max 1M ] [ HQ Profiles ] 365 Days \u26a1 \u267b\ufe0f",
+        "price": 92
+    },
+    {
+        "platform": "YouTube",
+        "category": "Video Likes/Views",
+        "service": "YouTube Views Own Service 365 Days REFIL INDIAN Users IN-MIXED",
+        "price": 136
+    },
+    {
+        "platform": "YouTube",
+        "category": "Video Likes/Views",
+        "service": "YouTube Likes [ Max 1M ] [ HQ Profiles ] 90 Days \u26a1 \u267b\ufe0f",
+        "price": 70
+    },
+    {
+        "platform": "YouTube",
+        "category": "Video Likes/Views",
+        "service": "YouTube Likes [ Max 1M ] [ HQ Profiles ] 30 Days \u26a1 \u267b\ufe0f",
+        "price": 53
+    },
+    {
+        "platform": "YouTube",
+        "category": "Video Likes/Views",
+        "service": "YouTube Views [ Non-Drop ] 50k-100k days | LIFETIME Refill \u267b\ufe0f",
+        "price": 199,
+        "min": 1000,
+        "max": 700000,
+        "api_service_id": 7532
+    },
+    {
+        "platform": "YouTube",
+        "category": "Shorts Likes/Views",
+        "service": "YouTube Shorts : Views",
+        "price": 206,
+        "min": 100,
+        "max": 1000000,
+        "api_service_id": 7291
+    },
+    {
+        "platform": "YouTube",
+        "category": "Shorts Likes/Views",
+        "service": "YouTube Shorts : Likes",
+        "price": 134,
+        "min": 10,
+        "max": 50000,
+        "api_service_id": 7496
+    },
+    {
+        "platform": "YouTube",
+        "category": "Shorts Likes/Views",
+        "service": "YouTube Shorts : Views",
+        "price": 231,
+        "min": 100,
+        "max": 1000000,
+        "api_service_id": 7291
+    },
+    {
+        "platform": "YouTube",
+        "category": "Shorts Likes/Views",
+        "service": "YouTube Shorts : Views",
+        "price": 194,
+        "min": 100,
+        "max": 1000000,
+        "api_service_id": 7291
+    },
+    {
+        "platform": "YouTube",
+        "category": "Shorts Likes/Views",
+        "service": "YouTube Shorts : Views",
+        "price": 196,
+        "min": 100,
+        "max": 1000000,
+        "api_service_id": 7291
+    },
+    {
+        "platform": "YouTube",
+        "category": "Livestream",
+        "service": "Youtube Live Stream [100% Concurrent - 15 Minutes]",
+        "price": 21,
+        "min": 50,
+        "max": 50000,
+        "api_service_id": 7500
+    },
+    {
+        "platform": "YouTube",
+        "category": "Livestream",
+        "service": "Youtube Live Stream [100% Concurrent - 30 Minutes]",
+        "price": 35,
+        "min": 50,
+        "max": 50000,
+        "api_service_id": 7501
+    },
+    {
+        "platform": "YouTube",
+        "category": "Livestream",
+        "service": "Youtube Live Stream [100% Concurrent - 60 Minutes]",
+        "price": 71,
+        "min": 50,
+        "max": 50000,
+        "api_service_id": 7502
+    },
+    {
+        "platform": "YouTube",
+        "category": "Livestream",
+        "service": "Youtube Live Stream [100% Concurrent - 90 Minutes]",
+        "price": 101,
+        "min": 50,
+        "max": 50000,
+        "api_service_id": 7503
+    },
+    {
+        "platform": "YouTube",
+        "category": "Livestream",
+        "service": "Youtube Live Stream [100% Concurrent - 2 Hours]",
+        "price": 101,
+        "min": 50,
+        "max": 50000,
+        "api_service_id": 7504
+    },
+    {
+        "platform": "YouTube",
+        "category": "Livestream",
+        "service": "Youtube Live Stream [100% Concurrent - 4 Hours]",
+        "price": 184,
+        "min": 50,
+        "max": 50000,
+        "api_service_id": 7506
+    },
+    {
+        "platform": "Twitter",
+        "category": "Views",
+        "service": "Twitter Video Views HQ",
+        "price": 2,
+        "api_service_id": 7340,
+        "min": 100,
+        "max": 100000000
+    },
+    {
+        "platform": "Twitter",
+        "category": "Views",
+        "service": "Twitter Tweet Views Super Fast",
+        "price": 2,
+        "min": 100,
+        "max": 100000000,
+        "api_service_id": 7339
+    },
+    {
+        "platform": "Twitter",
+        "category": "Views",
+        "service": "Twitter Tweet Views Instant",
+        "price": 2,
+        "api_service_id": 7338,
+        "min": 100,
+        "max": 100000000
+    },
+    {
+        "platform": "Twitter",
+        "category": "Views",
+        "service": "Post/tweet Views Fast",
+        "price": 2,
+        "api_service_id": 7337,
+        "min": 100,
+        "max": 100000000
+    },
+    {
+        "platform": "Twitter",
+        "category": "Likes",
+        "service": "Twitter Likes Instant",
+        "price": 169,
+        "api_service_id": 7336,
+        "min": 50,
+        "max": 10000000
+    },
+    {
+        "platform": "Facebook",
+        "category": "Views",
+        "service": "Facebook Reels/Video Views [Lifetime] [Non Drop]",
+        "price": 65,
+        "api_service_id": 7484,
+        "min": 100,
+        "max": 10000000
+    },
+    {
+        "platform": "Facebook",
+        "category": "Views",
+        "service": "Facebook Reels Views 100K Days Fast Start",
+        "price": 14
+    },
+    {
+        "platform": "Facebook",
+        "category": "Followers",
+        "service": "Facebook Page/Profile Followers [Zero Drop]",
+        "price": 184
+    },
+    {
+        "platform": "Facebook",
+        "category": "Likes",
+        "service": "Facebook Post Likes Nice Quality [NonDrop]",
+        "price": 164
+    },
+    {
+        "platform": "Telegram",
+        "category": "Views",
+        "service": "Telegram Post Views [Last 1] - S1 NEW",
+        "price": 6,
+        "api_service_id": 6701,
+        "min": 10,
+        "max": 10000000
+    },
+    {
+        "platform": "Telegram",
+        "category": "Views",
+        "service": "Telegram Post Views [Last 1] - S3 NEW",
+        "price": 8,
+        "api_service_id": 6701,
+        "min": 10,
+        "max": 10000000
+    },
+    {
+        "platform": "Telegram",
+        "category": "Views",
+        "service": "Telegram Post Views [Last 1] - S2",
+        "price": 4,
+        "api_service_id": 6701,
+        "min": 10,
+        "max": 10000000
+    },
+    {
+        "platform": "Telegram",
+        "category": "Views",
+        "service": "Telegram Post Views Last 5 - NEW",
+        "price": 36,
+        "api_service_id": 6701,
+        "min": 10,
+        "max": 10000000
+    },
+    {
+        "platform": "Telegram",
+        "category": "Views",
+        "service": "Telegram Post Views RUSSIA [Last 1]",
+        "price": 26,
+        "api_service_id": 6708,
+        "min": 10,
+        "max": 10000
+    },
+    {
+        "platform": "Telegram",
+        "category": "Views",
+        "service": "Telegram Post Views Real From Search - NEW",
+        "price": 70,
+        "api_service_id": 6700,
+        "min": 50,
+        "max": 100000
+    },
+    {
+        "platform": "Telegram",
+        "category": "Reactions",
+        "service": "Telegram Post Reactions + Views [\ud83d\ude0d]",
+        "price": 407,
+        "min": 10,
+        "max": 1000000,
+        "api_service_id": 6775
+    },
+    {
+        "platform": "Telegram",
+        "category": "Reactions",
+        "service": "Telegram Post Reactions + Views [\ud83d\udd25]",
+        "price": 407,
+        "min": 10,
+        "max": 1000000,
+        "api_service_id": 6770
+    },
+    {
+        "platform": "Telegram",
+        "category": "Reactions",
+        "service": "Telegram Post Reactions + Views [Refill Lifetime][FAST][S2]\ud83c\udf40\u26a1\ud83d\udcccNEW [\ud83d\ude31]",
+        "price": 3642,
+        "min": 10,
+        "max": 500000,
+        "api_service_id": 6782
+    },
+    {
+        "platform": "Telegram",
+        "category": "Reactions",
+        "service": "Telegram Post Reactions + Views [\ud83d\udc4d]",
+        "price": 407,
+        "min": 10,
+        "max": 1000000,
+        "api_service_id": 6768
+    },
+    {
+        "platform": "Telegram",
+        "category": "Reactions",
+        "service": "Telegram Post Reactions + Views [\ud83d\ude4f]",
+        "price": 2033,
+        "min": 10,
+        "max": 10000000,
+        "api_service_id": 6767
+    },
+    {
+        "platform": "Telegram",
+        "category": "Reactions",
+        "service": "Telegram Post Reactions + Views [Refill Lifetime][FAST][S2]\ud83c\udf40\u26a1\ud83d\udcccNEW [\ud83d\ude22]",
+        "price": 217,
+        "min": 10,
+        "max": 500000,
+        "api_service_id": 6782
+    },
+    {
+        "platform": "Telegram",
+        "category": "Reactions",
+        "service": "Telegram Post Reactions + Views [Positive] \ud83d\udc4d\ud83d\ude0d\ud83c\udf89\ud83d\udd25\u2764\ufe0f][Refill Lifetime] [Mixed]",
+        "price": 5,
+        "min": 10,
+        "max": 200000,
+        "api_service_id": 6761
+    },
+    {
+        "platform": "Telegram",
+        "category": "Reactions",
+        "service": "Telegram Post Reactions + Views [\ud83d\udca9]",
+        "price": 407,
+        "min": 10,
+        "max": 1000000,
+        "api_service_id": 6788
+    },
+    {
+        "platform": "Telegram",
+        "category": "Reactions",
+        "service": "Telegram Post Reactions + Views [\ud83e\udd2e]",
+        "price": 407,
+        "min": 10,
+        "max": 1000000,
+        "api_service_id": 6787
+    },
+    {
+        "platform": "Telegram",
+        "category": "Reactions",
+        "service": "Telegram Post Reactions + Views [\ud83d\ude31]",
+        "price": 407,
+        "min": 10,
+        "max": 1000000,
+        "api_service_id": 6786
+    },
+    {
+        "platform": "Telegram",
+        "category": "Reactions",
+        "service": "Telegram Post Reactions + Views [\ud83d\ude22]",
+        "price": 407,
+        "min": 10,
+        "max": 1000000,
+        "api_service_id": 6785
+    },
+    {
+        "platform": "Telegram",
+        "category": "Reactions",
+        "service": "Telegram Post Reactions + Views [\ud83e\udd17]",
+        "price": 407,
+        "min": 10,
+        "max": 1000000,
+        "api_service_id": 6787
+    },
+    {
+        "platform": "Telegram",
+        "category": "Reactions",
+        "service": "Telegram Post Reactions + Views [Refill - 365 Days][FAST]\ud83c\udf40\u26a1\ud83d\udcccNEW [\ud83e\udd1d]",
+        "price": 407,
+        "min": 10,
+        "max": 1000000,
+        "api_service_id": 6780
+    },
+    {
+        "platform": "Telegram",
+        "category": "Reactions",
+        "service": "Telegram Post Reactions + Views [Positive] [Mixed \ud83d\udc4d\ud83d\ude0d\ud83c\udf89\ud83d\udd25\u2764\ufe0f]",
+        "price": 30,
+        "min": 10,
+        "max": 1000000,
+        "api_service_id": 6764
+    },
+    {
+        "platform": "Telegram",
+        "category": "Reactions",
+        "service": "Telegram Post Reactions + Views [Negative][Mixed \ud83d\udc4e\ud83e\udd17\ud83d\ude22\ud83d\udca9\ud83e\udd2e][Refill Lifetime][FAST][S2]\ud83c\udf40\u26a1\ud83d\udcccNEW [Mixed]",
+        "price": 103,
+        "min": 50,
+        "max": 5000000,
+        "api_service_id": 6763
+    },
+    {
+        "platform": "Telegram",
+        "category": "Reactions",
+        "service": "Telegram Post Reactions + Views [Positive] [Mixed \ud83d\udc4d\ud83d\ude0d\ud83c\udf89\ud83d\udd25\u2764\ufe0f][Refill Lifetime][FAST][S2]\ud83c\udf40\u26a1\ud83d\udcccNEW [Mixed]",
+        "price": 103,
+        "min": 50,
+        "max": 5000000,
+        "api_service_id": 6762
+    },
+    {
+        "platform": "Telegram",
+        "category": "Reactions",
+        "service": "Telegram Post Reactions + Views [\ud83d\udc4e]",
+        "price": 1095,
+        "min": 10,
+        "max": 200000,
+        "api_service_id": 6783
+    },
+    {
+        "platform": "Telegram",
+        "category": "Reactions",
+        "service": "Telegram Post Reactions + Views [Refill Lifetime][FAST][S2]\ud83c\udf40\u26a1\ud83d\udcccNEW [\ud83c\udf89]",
+        "price": 3642,
+        "min": 10,
+        "max": 500000,
+        "api_service_id": 6782
+    },
+    {
+        "platform": "Telegram",
+        "category": "Reactions",
+        "service": "Telegram Post Reactions + Views [Refill - 365 Days][FAST]\ud83c\udf40\u26a1\ud83d\udcccNEW [\ud83d\uddff]",
+        "price": 407,
+        "min": 10,
+        "max": 1000000,
+        "api_service_id": 6780
+    },
+    {
+        "platform": "Telegram",
+        "category": "Reactions",
+        "service": "Telegram Post Reactions + Views [Refill - 365 Days][FAST]\ud83c\udf40\u26a1\ud83d\udcccNEW [\ud83d\ude02]",
+        "price": 407,
+        "min": 10,
+        "max": 1000000,
+        "api_service_id": 6780
+    },
+    {
+        "platform": "Telegram",
+        "category": "Reactions",
+        "service": "Telegram Post Reactions + Views [Refill Lifetime][FAST][S2]\ud83c\udf40\u26a1\ud83d\udcccNEW [\ud83d\udee9\ufe0f]",
+        "price": 46,
+        "min": 10,
+        "max": 500000,
+        "api_service_id": 6782
+    },
+    {
+        "platform": "Telegram",
+        "category": "Members",
+        "service": "Telegram Group/Channel Members Real & Active Quality",
+        "price": 458,
+        "api_service_id": 7212,
+        "min": 10,
+        "max": 100000
+    },
+    {
+        "platform": "Telegram",
+        "category": "Members",
+        "service": "Telegram 100% Indian Real & Active Members",
+        "price": 438
+    },
+    {
+        "platform": "Telegram",
+        "category": "Members",
+        "service": "Telegram Group/Channel members High Base [Zero Drop]",
+        "price": 816,
+        "api_service_id": 7212,
+        "min": 10,
+        "max": 100000
+    },
+    {
+        "platform": "Telegram",
+        "category": "Members",
+        "service": "TM48 Telegram Channel/Group Members",
+        "price": 973,
+        "min": 500,
+        "max": 7000000,
+        "api_service_id": 7215
+    },
+    {
+        "platform": "Telegram",
+        "category": "Members",
+        "service": "TM34 Telegram Channel/Group Members",
+        "price": 486,
+        "min": 500,
+        "max": 7000000,
+        "api_service_id": 7215
+    },
+    {
+        "platform": "TikTok",
+        "category": "Likes",
+        "service": "TikTok Likes",
+        "price": 17
+    },
+    {
+        "platform": "TikTok",
+        "category": "Followers",
+        "service": "TikTok Followers (Basic)",
+        "price": 202
+    },
+    {
+        "platform": "TikTok",
+        "category": "Followers",
+        "service": "TikTok Followers (Premium)",
+        "price": 360
+    },
+    {
+        "platform": "TikTok",
+        "category": "Followers",
+        "service": "TikTok Followers Real & Active Users",
+        "price": 62
+    },
+    {
+        "platform": "TikTok",
+        "category": "Engagement",
+        "service": "TikTok Save",
+        "price": 18
+    },
+    {
+        "platform": "TikTok",
+        "category": "Engagement",
+        "service": "TikTok Shares",
+        "price": 11
+    },
+    {
+        "platform": "YouTube",
+        "category": "Watch Time",
+        "service": "Youtube WatchTime",
+        "price": 4748,
+        "min": 1000,
+        "max": 1000000,
+        "api_service_id": 7444,
+        "notes": "🎯 **Youtube WatchTime Service**\n\n⏱️ **Start Time**: 12-48 Hours\n🚀 **Speed**: 4k/Day\n🎯 **Quality**: Indian Mumbai to Hyd Target\n🔗 **Link**: Video Link (5-30 Mins Video Accepted)\n📺 **Delivery**: Watchtime delivery on customer's video\n♻️ **Refill**: Lifetime\n\n⚠️ **IMPORTANT REQUIREMENTS**:\n\n1️⃣ **Channel Requirement**: Must have old video with some views\n2️⃣ **Manager Access**: Need access on Fastestwatchtime@gmail.com\n3️⃣ **Video Upload**: We upload 1 video - Don't remove during order\n4️⃣ **No Monetization**: Only Watchtime service\n5️⃣ **Video Privacy**: Can make public 1 day after completion\n6️⃣ **Support**: Contact WhatsApp after order placement\n\n📦 **Package Includes**:\n• 4k Watchtime\n• 80k+ Views\n• 500+ Subscribers\n\n💡 **Note**: Order marked complete without delivery if video is deleted during processing"
+    }
+]

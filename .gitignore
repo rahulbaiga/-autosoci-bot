@@ -1,0 +1,13 @@
+# Environment variables - Contains secret keys
+.env
+
+# Log files - Generated at runtime, not needed in repo
+*.log
+
+# Python cache files
+__pycache__/
+venv/
+
+# IDE configuration files
+.vscode/
+.idea/
