@@ -16,28 +16,34 @@ import sys
 PROFIT_MARGIN = 1.4
 PROFIT_MARGIN_FILE = 'profit_margin.txt'
 
-# --- LOGGING SETUP ---
+# --- Load Environment Variables ---
+# This setup works for both local development (with .env) and production (e.g., Railway)
+load_dotenv() 
+
+BOT_TOKEN = os.getenv('BOT_TOKEN')
+AGENCY_API_KEY = os.getenv('AGENCY_API_KEY')
+UPI_ID = os.getenv('UPI_ID')
+ADMIN_ID = os.getenv('ADMIN_ID')
+
+# --- Logger Setup ---
+# Configure logging to file and console
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s | %(levelname)s | %(name)s | %(message)s',
     handlers=[
-        logging.FileHandler('bot.log', encoding='utf-8'),
-        logging.StreamHandler()
+        logging.FileHandler("bot.log"),
+        logging.StreamHandler(sys.stdout)
     ]
 )
 logger = logging.getLogger(__name__)
 
-# Load environment variables
-load_dotenv()
-BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-ADMIN_ID = os.getenv('ADMIN_IDS')
-AGENCY_API_KEY = os.getenv('AGENCY_API_KEY')
-UPI_ID = os.getenv('UPI_ID')
+# --- Initial Check for Environment Variables ---
+# If any variable is missing, log a critical error and exit.
+if not all([BOT_TOKEN, AGENCY_API_KEY, UPI_ID, ADMIN_ID]):
+    logger.critical("FATAL: Missing one or more required environment variables (BOT_TOKEN, AGENCY_API_KEY, UPI_ID, ADMIN_ID).")
+    sys.exit("Critical environment variables are not set. Exiting.")
 
-if not BOT_TOKEN or not ADMIN_ID or not AGENCY_API_KEY or not UPI_ID:
-    logger.error('Missing required environment variables. Please check your .env file.')
-    sys.exit(1)
-
+# --- Bot Initialization ---
 bot = telebot.TeleBot(BOT_TOKEN)
 
 # --- SERVICE & STATE MANAGEMENT ---
