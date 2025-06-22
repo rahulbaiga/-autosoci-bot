@@ -75,29 +75,126 @@ def save_profit_margin(margin):
         f.write(str(margin))
     logger.info(f"Saved new profit margin to file: {margin}")
 
-def load_services():
-    """Loads services from JSON and assigns a unique ID to each for callbacks."""
+def categorize_service(api_service):
+    """
+    Intelligently determines the platform and category for a service from the API.
+    Returns: A tuple (platform, category) or (None, None) if uncategorized.
+    """
+    name = api_service['name'].lower()
+    
+    # Platform detection
+    platform = None
+    if 'instagram' in name:
+        platform = 'Instagram'
+    elif 'youtube' in name:
+        platform = 'YouTube'
+    elif 'telegram' in name:
+        platform = 'Telegram'
+    elif 'twitter' in name:
+        platform = 'Twitter'
+    elif 'facebook' in name:
+        platform = 'Facebook'
+    elif 'tiktok' in name:
+        platform = 'TikTok'
+
+    if not platform:
+        return None, None # Skip services for platforms we don't support
+
+    # Category detection (within a platform)
+    category = 'Uncategorized' # Default category
+    if platform == 'Instagram':
+        if 'follower' in name: category = 'Followers'
+        elif 'like' in name: category = 'Likes'
+        elif 'view' in name: category = 'Views'
+        elif 'comment' in name: category = 'Comments'
+        elif 'story' in name: category = 'Story'
+        elif 'share' in name or 'save' in name: category = 'Shares/Saves'
+        elif 'channel' in name: category = 'Channel'
+    elif platform == 'YouTube':
+        if 'subscribe' in name: category = 'Subscribers'
+        elif 'like' in name or ('view' in name and 'short' not in name): category = 'Video Likes/Views'
+        elif 'short' in name: category = 'Shorts Likes/Views'
+        elif 'live' in name or 'stream' in name: category = 'Livestream'
+        elif 'watch' in name or 'time' in name: category = 'Watch Time'
+    elif platform == 'Telegram':
+        if 'view' in name: category = 'Views'
+        elif 'reaction' in name: category = 'Reactions'
+        elif 'member' in name: category = 'Members'
+    elif platform == 'Twitter':
+        if 'view' in name: category = 'Views'
+        elif 'like' in name: category = 'Likes'
+    elif platform == 'Facebook':
+        if 'follower' in name: category = 'Followers'
+        elif 'like' in name: category = 'Likes'
+        elif 'view' in name: category = 'Views'
+    elif platform == 'TikTok':
+        if 'follower' in name: category = 'Followers'
+        elif 'like' in name: category = 'Likes'
+        elif 'save' in name or 'share' in name: category = 'Engagement'
+    
+    return platform, category
+
+def load_services_from_api():
+    """Fetches services from the agency API and structures them for the bot."""
     global loaded_services, services_by_id
-    with open('services.json', 'r', encoding='utf-8') as f:
-        data = json.load(f)
-        service_id_counter = 1
+    
+    api_key = os.getenv('AGENCY_API_KEY')
+    if not api_key:
+        logger.critical("FATAL: AGENCY_API_KEY environment variable not set.")
+        return False
+        
+    url = f"https://nilidon.com/api/v2?action=services&key={api_key}"
+    
+    logger.info("Attempting to fetch services from agency API...")
+    
+    try:
+        response = requests.get(url, timeout=20)
+        response.raise_for_status()
+        api_data = response.json()
+        
         platforms = {}
-        for service_data in data:
-            platform_name = service_data['platform']
-            category_name = service_data['category']
+        
+        for service_data in api_data:
+            platform_name, category_name = categorize_service(service_data)
+
+            if not platform_name:
+                continue
 
             if platform_name not in platforms:
                 platforms[platform_name] = {}
             if category_name not in platforms[platform_name]:
                 platforms[platform_name][category_name] = []
 
-            # Assign a unique ID for button callbacks
-            service_data['id'] = service_id_counter
-            platforms[platform_name][category_name].append(service_data)
-            services_by_id[service_id_counter] = service_data
-            service_id_counter += 1
+            # Treat the 'rate' from the API as the direct price in INR.
+            price_inr = float(service_data['rate'])
+
+            bot_service = {
+                'id': int(service_data['service']),
+                'api_service_id': int(service_data['service']),
+                'platform': platform_name,
+                'category': category_name,
+                'service': service_data['name'],
+                'price': price_inr,
+                'min': int(service_data.get('min', 0)),
+                'max': int(service_data.get('max', 1000000)),
+                'description': service_data.get('category', 'No description available.'),
+                'refill': service_data.get('refill', False),
+                'cancel': service_data.get('cancel', False)
+            }
+            
+            platforms[platform_name][category_name].append(bot_service)
+            services_by_id[bot_service['id']] = bot_service
+
         loaded_services = platforms
-        logger.info(f"Successfully loaded and indexed {len(services_by_id)} services.")
+        logger.info(f"Successfully loaded and indexed {len(services_by_id)} services from the API.")
+        return True
+
+    except requests.exceptions.RequestException as e:
+        logger.critical(f"FATAL: Could not fetch services from API: {e}")
+        return False
+    except json.JSONDecodeError:
+        logger.critical("FATAL: Failed to parse JSON from agency API response.")
+        return False
 
 def find_service_by_id(service_id):
     """Finds a service in the loaded dictionary by its unique ID."""
@@ -152,7 +249,7 @@ def get_category_keyboard(platform):
     markup = types.InlineKeyboardMarkup(row_width=2)
     buttons = [types.InlineKeyboardButton(cat, callback_data=f"category_{platform}_{cat}") for cat in categories]
     markup.add(*buttons)
-    markup.add(types.InlineKeyboardButton('⬅️ Back to Platforms', callback_data="back_to_platform"))
+    markup.add(types.InlineKeyboardButton('⬅️ Back', callback_data="back_to_previous"))
     return markup
 
 def get_service_keyboard(platform, category):
@@ -164,7 +261,15 @@ def get_service_keyboard(platform, category):
         btn_text = f"{service['service']} (₹{price_per_1000:.2f}/1k)"
         # Use the unique service ID in the callback_data
         markup.add(types.InlineKeyboardButton(btn_text, callback_data=f"service_{service['id']}"))
-    markup.add(types.InlineKeyboardButton('⬅️ Back to Categories', callback_data=f"back_to_category_{platform}"))
+    markup.add(types.InlineKeyboardButton('⬅️ Back', callback_data="back_to_previous"))
+    return markup
+
+def get_details_keyboard():
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton('⬅️ Back', callback_data="back_to_previous"),
+        types.InlineKeyboardButton('➡️ Next', callback_data="details_next")
+    )
     return markup
 
 def get_link_prompt(platform, service_name):
@@ -200,7 +305,7 @@ def get_link_prompt(platform, service_name):
 
 def get_link_keyboard():
     markup = types.InlineKeyboardMarkup(row_width=1)
-    markup.add(types.InlineKeyboardButton('⬅️ Back', callback_data="back_to_service"))
+    markup.add(types.InlineKeyboardButton('⬅️ Back', callback_data="back_to_previous"))
     return markup
 
 def get_quantity_keyboard():
@@ -212,23 +317,23 @@ def get_quantity_keyboard():
         types.InlineKeyboardButton('5000', callback_data="quantity_5000")
     )
     markup.add(types.InlineKeyboardButton('Custom Quantity', callback_data="custom_quantity"))
-    markup.add(types.InlineKeyboardButton('⬅️ Back', callback_data="back_to_link"))
+    markup.add(types.InlineKeyboardButton('⬅️ Back', callback_data="back_to_previous"))
     return markup
 
 def get_summary_keyboard():
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(types.InlineKeyboardButton('✅ Confirm Order', callback_data="confirm_order"))
-    markup.add(types.InlineKeyboardButton('⬅️ Back', callback_data="back_to_quantity"))
+    markup.add(types.InlineKeyboardButton('⬅️ Back', callback_data="back_to_previous"))
     return markup
 
 def get_payment_keyboard():
     markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.add(types.InlineKeyboardButton('⬅️ Back', callback_data="back_to_summary"))
+    markup.add(types.InlineKeyboardButton('⬅️ Back', callback_data="back_to_previous"))
     return markup
 
 def get_payment_proof_keyboard():
     markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.add(types.InlineKeyboardButton('⬅️ Back', callback_data="back_to_payment"))
+    markup.add(types.InlineKeyboardButton('⬅️ Back', callback_data="back_to_previous"))
     return markup
 
 def generate_upi_qr(upi_id, amount, order_id):
@@ -329,13 +434,16 @@ def send_welcome(message):
 
     # If not an admin, proceed with the regular user flow
     logger.info(f"Regular user {message.chat.id}. Starting standard user flow.")
+    
+    # Initialize the user's state stack
+    user_state[message.chat.id] = {'step_stack': [{'step': 'platform'}]}
+    
     bot.send_message(
         message.chat.id,
         WELCOME_TEXT,
         parse_mode='HTML',
         reply_markup=get_platform_keyboard()
     )
-    user_state[message.chat.id] = {'step': 'platform'}
 
 @bot.message_handler(commands=['manageraccess'])
 def manager_access_info(message):
@@ -368,80 +476,162 @@ def manager_access_info(message):
     )
     bot.send_message(message.chat.id, text, parse_mode='HTML')
 
+# --- State Management Helpers ---
+def get_current_state(chat_id):
+    """Gets the user's current state from the top of their step stack."""
+    # Initialize if not present
+    if chat_id not in user_state or 'step_stack' not in user_state[chat_id]:
+        user_state[chat_id] = {'step_stack': [{'step': 'platform'}]}
+    return user_state[chat_id]['step_stack'][-1]
+
+def push_state(chat_id, new_state_data):
+    """
+    Updates the user's state by pushing a new step onto their stack.
+    The new step inherits data from the previous step.
+    """
+    stack = user_state.setdefault(chat_id, {}).setdefault('step_stack', [])
+    
+    # Inherit from previous state and update with new data
+    new_state = (stack[-1] if stack else {}).copy()
+    new_state.update(new_state_data)
+    
+    stack.append(new_state)
+
+def pop_state(chat_id):
+    """Pops the current step from the user's stack, returning them to the previous state."""
+    stack = user_state.get(chat_id, {}).get('step_stack', [])
+    if len(stack) > 1: # Always keep the base 'platform' state
+        stack.pop()
+
 # --- NEW CALLBACK HANDLERS FOR INLINE BUTTONS ---
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('platform_') or call.data == 'back_to_platform')
+@bot.callback_query_handler(func=lambda call: call.data == 'back_to_previous')
+def handle_back_button(call):
+    chat_id = call.message.chat.id
+    message_id = call.message.message_id
+    logger.info(f"User {chat_id} clicked the back button.")
+    bot.answer_callback_query(call.id)
+    
+    pop_state(chat_id)
+    prev_state = get_current_state(chat_id)
+    step = prev_state.get('step')
+
+    logger.info(f"Returning user {chat_id} to step: {step}")
+
+    try:
+        if step == 'platform':
+            bot.edit_message_text("👋 <b>Welcome to AUTOSOCI Bot!</b>", chat_id, message_id, parse_mode='HTML', reply_markup=get_platform_keyboard())
+        
+        elif step == 'category':
+            platform = prev_state.get('platform')
+            bot.edit_message_text(f"You selected <b>{platform}</b>. Now choose a category:", chat_id, message_id, parse_mode='HTML', reply_markup=get_category_keyboard(platform))
+        
+        elif step == 'service':
+            platform = prev_state.get('platform')
+            category = prev_state.get('category')
+            bot.edit_message_text(f"You selected <b>{category}</b>. Now choose a service:", chat_id, message_id, parse_mode='HTML', reply_markup=get_service_keyboard(platform, category))
+
+        elif step == 'details':
+            show_service_details(chat_id, message_id)
+
+        elif step == 'link':
+            service_id = prev_state.get('service_id')
+            service = find_service_by_id(service_id)
+            prompt = get_link_prompt(service['platform'], service['service'])
+            bot.edit_message_text(f"✅ You selected <b>{service['service']}</b>!\n\n{prompt}", chat_id, message_id, parse_mode='HTML', reply_markup=get_link_keyboard())
+
+        elif step == 'quantity':
+            bot.edit_message_text("✅ Link received! Now, how much engagement would you like?", chat_id, message_id, reply_markup=get_quantity_keyboard())
+        
+        elif step == 'summary':
+            show_order_summary(chat_id, message_id_to_edit=message_id)
+
+        elif step == 'payment':
+            # This is tricky because we can't edit a text message into a photo message.
+            # So we delete the current message and send a new one.
+            bot.delete_message(chat_id, message_id)
+            send_payment_instructions(call.message)
+        
+        else: # Fallback
+            bot.edit_message_text("An error occurred. Returning to the start.", chat_id, message_id, reply_markup=get_platform_keyboard())
+    except Exception as e:
+        logger.error(f"Error handling back button for user {chat_id} to step {step}: {e}")
+        bot.edit_message_text("An error occurred, please try again starting from the beginning.", chat_id, message_id, reply_markup=get_platform_keyboard())
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('platform_'))
 def handle_platform_callback(call):
     logger.info(f"User {call.message.chat.id} selected: {call.data}")
     bot.answer_callback_query(call.id)
-    if call.data == 'back_to_platform':
-        # This case is handled by the category handler, but good to have
-        user_state[call.message.chat.id]['step'] = 'platform'
-        bot.edit_message_text("👋 <b>Welcome to AUTOSOCI Bot!</b>", call.message.chat.id, call.message.message_id, parse_mode='HTML', reply_markup=get_platform_keyboard())
-        return
 
     platform = call.data.split('_', 1)[1]
-    user_state[call.message.chat.id] = {'step': 'category', 'platform': platform}
+    push_state(call.message.chat.id, {'step': 'category', 'platform': platform})
     bot.edit_message_text(f"You selected <b>{platform}</b>. Now choose a category:", call.message.chat.id, call.message.message_id, parse_mode='HTML', reply_markup=get_category_keyboard(platform))
 
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('category_') or call.data.startswith('back_to_category_'))
+@bot.callback_query_handler(func=lambda call: call.data.startswith('category_'))
 def handle_category_callback(call):
     logger.info(f"User {call.message.chat.id} selected: {call.data}")
     bot.answer_callback_query(call.id)
-    state = user_state.get(call.message.chat.id, {})
     
-    if call.data.startswith('back_to_category_'):
-        user_state[call.message.chat.id]['step'] = 'platform'
-        bot.edit_message_text("👋 <b>Welcome to AUTOSOCI Bot!</b>", call.message.chat.id, call.message.message_id, parse_mode='HTML', reply_markup=get_platform_keyboard())
-        return
-
     _, platform, category = call.data.split('_', 2)
-    state['category'] = category
-    state['step'] = 'service'
+    push_state(call.message.chat.id, {'step': 'service', 'category': category})
     bot.edit_message_text(f"You selected <b>{category}</b>. Now choose a service:", call.message.chat.id, call.message.message_id, parse_mode='HTML', reply_markup=get_service_keyboard(platform, category))
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('service_'))
 def handle_service_selection(call):
-    """Handles the user's service choice using the unique service ID."""
+    """Handles the user's service choice and shows the new details page."""
     logger.info(f"User {call.message.chat.id} selected: {call.data}")
     try:
         service_id = int(call.data.split('_')[1])
-        service = find_service_by_id(service_id)
-        if not service:
+        if not find_service_by_id(service_id):
             bot.answer_callback_query(call.id, "❌ Error: Service not found. It might be outdated.", show_alert=True)
             return
 
-        state = user_state.get(call.message.chat.id, {})
-        state['service_id'] = service_id
-        state['step'] = 'link'
-        user_state[call.message.chat.id] = state
+        push_state(call.message.chat.id, {'step': 'details', 'service_id': service_id})
+        show_service_details(call.message.chat.id, call.message.message_id)
 
-        # Check if service has detailed notes
-        if 'notes' in service:
-            text = f"✅ <b>You selected: {service['service']}</b>\n\n{service['notes']}"
-            markup = get_link_keyboard()
-            # Add manager access button for YouTube WatchTime
-            if service['platform'] == 'YouTube' and 'WatchTime' in service['service']:
-                markup.add(types.InlineKeyboardButton('ℹ️ What is Manager Access?', callback_data='manageraccess_info'))
-            bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode='HTML', reply_markup=markup)
-            # PROMPT USER TO SEND LINK
-            prompt = get_link_prompt(service['platform'], service['service'])
-            bot.send_message(call.message.chat.id, f"🔗 <b>Next Step:</b> {prompt}", parse_mode='HTML')
-            return
-        else:
-            # Standard service selection
-            prompt = get_link_prompt(service['platform'], service['service'])
-            bot.edit_message_text(f"✅ You selected <b>{service['service']}</b>!\n\n{prompt}", call.message.chat.id, call.message.message_id, parse_mode='HTML', reply_markup=get_link_keyboard())
     except (ValueError, IndexError) as e:
         logger.error(f"Error handling service selection for call data '{call.data}': {e}")
         bot.answer_callback_query(call.id, "❌ An unexpected error occurred.", show_alert=True)
 
-@bot.message_handler(func=lambda m: user_state.get(m.chat.id, {}).get('step') == 'link')
+@bot.callback_query_handler(func=lambda call: call.data == 'details_next')
+def handle_details_next(call):
+    chat_id = call.message.chat.id
+    message_id = call.message.message_id
+    logger.info(f"User {chat_id} proceeding from details to link submission.")
+    bot.answer_callback_query(call.id)
+
+    # Push the 'link' step onto the stack
+    push_state(chat_id, {'step': 'link'})
+    
+    state = get_current_state(chat_id)
+    service = find_service_by_id(state.get('service_id'))
+
+    # Check for special cases like YouTube WatchTime that might have different prompts or flows
+    if service['platform'] == 'YouTube' and 'WatchTime' in service['service']:
+         markup = get_link_keyboard()
+         markup.add(types.InlineKeyboardButton('ℹ️ What is Manager Access?', callback_data='manageraccess_info'))
+         bot.edit_message_text(f"✅ <b>You selected: {service['service']}</b>\n\n{service['description']}", chat_id, message_id, parse_mode='HTML', reply_markup=markup)
+         prompt = get_link_prompt(service['platform'], service['service'])
+         bot.send_message(chat_id, f"🔗 <b>Next Step:</b> {prompt}", parse_mode='HTML')
+         return
+
+    # Standard service link prompt
+    prompt = get_link_prompt(service['platform'], service['service'])
+    bot.edit_message_text(
+        f"✅ You selected <b>{service['service']}</b>!\n\n{prompt}",
+        chat_id,
+        message_id,
+        parse_mode='HTML',
+        reply_markup=get_link_keyboard()
+    )
+
+@bot.message_handler(func=lambda m: get_current_state(m.chat.id).get('step') == 'link')
 def handle_link(message):
     logger.info(f"User {message.chat.id} submitted link: {message.text}")
-    state = user_state.get(message.chat.id, {})
+    state = get_current_state(message.chat.id)
     
     # Basic link validation
     if not message.text.startswith(('http://', 'https://')):
@@ -454,63 +644,68 @@ def handle_link(message):
     service = find_service_by_id(state.get('service_id'))
     if service and service['platform'] == 'YouTube' and 'WatchTime' in service['service']:
         # For YouTube WatchTime, use fixed quantity of 1000 and go directly to summary
-        state['quantity'] = 1000
-        state['step'] = 'summary'
-        user_state[message.chat.id] = state
+        push_state(message.chat.id, {'step': 'summary', 'link': message.text, 'quantity': 1000})
         
         # Show order summary directly
         show_order_summary(message.chat.id)
         return
     
     # For all other services, proceed with quantity selection
-    state['step'] = 'quantity'
+    push_state(message.chat.id, {'step': 'quantity', 'link': message.text})
     bot.send_message(message.chat.id, "✅ Link received! Now, how much engagement would you like?", reply_markup=get_quantity_keyboard())
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('quantity_') or call.data == 'custom_quantity' or call.data == 'back_to_link')
+@bot.callback_query_handler(func=lambda call: call.data.startswith('quantity_') or call.data == 'custom_quantity')
 def handle_quantity_callback(call):
     logger.info(f"User {call.message.chat.id} selected: {call.data}")
     bot.answer_callback_query(call.id)
-    state = user_state.get(call.message.chat.id, {})
-
-    if call.data == 'back_to_link':
-        state['step'] = 'link'
-        prompt = get_link_prompt(state['service']['platform'], state['service']['service'])
-        bot.edit_message_text(f"✅ You selected <b>{state['service']['service']}</b>!\n\n{prompt}", call.message.chat.id, call.message.message_id, parse_mode='HTML', reply_markup=get_link_keyboard())
-        return
+    state = get_current_state(call.message.chat.id)
 
     if call.data == 'custom_quantity':
-        state['step'] = 'awaiting_custom_quantity'
+        push_state(call.message.chat.id, {'step': 'awaiting_custom_quantity'})
         bot.send_message(call.message.chat.id, "💡 Please enter the desired quantity (e.g., 1000):")
         return
 
     quantity = int(call.data.split('_')[1])
     process_quantity(call.message, quantity)
 
-@bot.callback_query_handler(func=lambda call: call.data == 'confirm_order' or call.data == 'back_to_quantity')
+@bot.message_handler(func=lambda m: get_current_state(m.chat.id).get('step') == 'awaiting_custom_quantity')
+def handle_custom_quantity_input(message):
+    """Handles the user's text input for a custom quantity."""
+    logger.info(f"User {message.chat.id} submitted custom quantity: {message.text}")
+    try:
+        quantity = int(message.text.strip())
+        if quantity <= 0:
+            raise ValueError("Quantity must be positive.")
+        
+        # The 'awaiting_custom_quantity' step is now fulfilled. 
+        # We pop it from the history before processing the quantity.
+        pop_state(message.chat.id) 
+        
+        # Now process the quantity, which will move to the summary step
+        process_quantity(message, quantity)
+        
+    except (ValueError, TypeError):
+        bot.reply_to(message, "❌ Invalid input. Please enter a valid whole number (e.g., 150).")
+
+@bot.callback_query_handler(func=lambda call: call.data == 'confirm_order')
 def handle_summary_callback(call):
     logger.info(f"User {call.message.chat.id} selected: {call.data}")
     bot.answer_callback_query(call.id)
     
-    if call.data == 'back_to_quantity':
-        user_state[call.message.chat.id]['step'] = 'quantity'
-        bot.edit_message_text("🔙 Back to quantity selection:", call.message.chat.id, call.message.message_id, reply_markup=get_quantity_keyboard())
-        return
-    
-    if call.data == 'confirm_order':
-        user_state[call.message.chat.id]['step'] = 'payment'
-        congrats_msg = (
-            "🎉 <b>Congratulations!</b> 🎉\n\n"
-            "Thank you for choosing <b>AUTOSOCI</b> to boost your social presence! 🚀\n"
-            "You're just one step away from growing your account with 100% organic results. 💚\n\n"
-            "Let's complete your order and get you started on your journey to success! 🌟"
-        )
-        bot.send_message(call.message.chat.id, congrats_msg, parse_mode='HTML')
-        send_payment_instructions(call.message)
+    push_state(call.message.chat.id, {'step': 'payment'})
+    congrats_msg = (
+        "🎉 <b>Congratulations!</b> 🎉\n\n"
+        "Thank you for choosing <b>AUTOSOCI</b> to boost your social presence! 🚀\n"
+        "You're just one step away from growing your account with 100% organic results. 💚\n\n"
+        "Let's complete your order and get you started on your journey to success! 🌟"
+    )
+    bot.send_message(call.message.chat.id, congrats_msg, parse_mode='HTML')
+    send_payment_instructions(call.message)
 
-@bot.message_handler(content_types=['photo'], func=lambda m: user_state.get(m.chat.id, {}).get('step') == 'payment')
+@bot.message_handler(content_types=['photo'], func=lambda m: get_current_state(m.chat.id).get('step') == 'payment')
 def handle_payment_proof(message):
     logger.info(f"User {message.chat.id} uploaded payment proof.")
-    state = user_state.get(message.chat.id, {})
+    state = get_current_state(message.chat.id)
     service = find_service_by_id(state.get('service_id'))
     quantity = state.get('quantity')
     link = state.get('link')
@@ -561,23 +756,18 @@ def handle_payment_proof(message):
             except Exception as e:
                 logger.error(f"Failed to send order notification to admin {admin}: {e}")
 
-    state['step'] = 'pending_approval'
-    user_state[message.chat.id] = state
+    push_state(message.chat.id, {'step': 'pending_approval'})
 
-@bot.message_handler(func=lambda m: user_state.get(m.chat.id, {}).get('step') == 'payment' and m.content_type != 'photo')
+@bot.message_handler(func=lambda m: get_current_state(m.chat.id).get('step') == 'payment' and m.content_type != 'photo')
 def prompt_payment_proof(message):
-    if message.text == '⬅️ Back':
-        user_state[message.chat.id]['step'] = 'summary'
-        show_order_summary(message.chat.id)
-        return
     bot.send_message(message.chat.id, "📸 Please upload your payment screenshot to complete your order.", reply_markup=get_payment_proof_keyboard())
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('approve_') or call.data.startswith('reject_'))
 def handle_admin_approval(call):
     action, user_id, order_id = call.data.split('_', 2)
     user_id = int(user_id)
-    state = user_state.get(user_id)
-    if not state:
+    state = get_current_state(user_id)
+    if not state or state.get('step') != 'pending_approval':
         bot.answer_callback_query(call.id, "Order not found or already processed.")
         return
     if action == 'approve':
@@ -589,7 +779,7 @@ def handle_admin_approval(call):
         if not service_id:
             logger.error(f"Order approval failed for user {user_id}: 'api_service_id' missing for service '{service.get('service')}'")
             bot.send_message(user_id, "❌ <b>There was a configuration error with this service. Please contact support.</b>", parse_mode='HTML')
-            bot.send_message(call.message.chat.id, f"<b>APPROVAL FAILED:</b> Service '{service.get('service')}' is missing its `api_service_id` in services.json.", parse_mode='HTML')
+            bot.send_message(call.message.chat.id, f"<b>APPROVAL FAILED:</b> The service '{service.get('service')}' is missing its 'api_service_id' in the loaded configuration. This can happen if the agency API did not provide an ID for this service. Please check the bot's startup logs.", parse_mode='HTML')
             return
 
         link = state['link']
@@ -601,7 +791,7 @@ def handle_admin_approval(call):
         if order_id:
             state['agency_order_id'] = order_id
             bot.send_message(user_id, f"✅ <b>Your payment has been approved!</b>\nYour order is now being processed.\nOrder ID: <code>{order_id}</code>\nThank you for your trust!", parse_mode='HTML')
-            state['step'] = 'processing'
+            push_state(user_id, {'step': 'processing'})
             # Start polling in a background thread
             threading.Thread(target=poll_order_status, args=(user_id, order_id), daemon=True).start()
         else:
@@ -633,9 +823,7 @@ def handle_set_margin_prompt(call):
         bot.answer_callback_query(call.id, "You are not authorized.", show_alert=True)
         return
     
-    state = user_state.get(call.message.chat.id, {})
-    state['step'] = 'awaiting_margin'
-    user_state[call.message.chat.id] = state
+    push_state(call.message.chat.id, {'step': 'awaiting_margin'})
     
     bot.answer_callback_query(call.id)
     bot.edit_message_text(
@@ -647,7 +835,7 @@ def handle_set_margin_prompt(call):
         parse_mode='HTML'
     )
 
-@bot.message_handler(func=lambda m: user_state.get(m.chat.id, {}).get('step') == 'awaiting_margin')
+@bot.message_handler(func=lambda m: get_current_state(m.chat.id).get('step') == 'awaiting_margin')
 def handle_new_margin(message):
     """Saves the new profit margin from the admin."""
     if str(message.chat.id) not in ADMIN_ID.split(','):
@@ -663,15 +851,14 @@ def handle_new_margin(message):
         
         bot.reply_to(message, f"✅ Profit margin has been updated to {margin_percent}%.")
         
-        # Reset state and show admin panel
-        user_state.pop(message.chat.id, None)
+        pop_state(message.chat.id) 
         bot.send_message(message.chat.id, "Returning to the admin panel.", reply_markup=get_admin_keyboard())
 
     except (ValueError, TypeError):
         bot.reply_to(message, "❌ Invalid input. Please enter a number (e.g., 40).")
 
-def show_order_summary(chat_id):
-    state = user_state.get(chat_id, {})
+def show_order_summary(chat_id, message_id_to_edit=None):
+    state = get_current_state(chat_id)
     service = find_service_by_id(state.get('service_id'))
     quantity = state.get('quantity')
     link = state.get('link')
@@ -692,15 +879,15 @@ def show_order_summary(chat_id):
         f"🟢 Quantity: {quantity}\n"
         f"💰 <b>Total Amount: ₹{final_amount:.2f}</b>"
     )
-    if 'last_message_id' in state:
-        bot.edit_message_text(summary_text, chat_id, state['last_message_id'], parse_mode='HTML', reply_markup=get_summary_keyboard())
+    if message_id_to_edit:
+        bot.edit_message_text(summary_text, chat_id, message_id_to_edit, parse_mode='HTML', reply_markup=get_summary_keyboard())
     else:
-        sent_message = bot.send_message(chat_id, summary_text, parse_mode='HTML', reply_markup=get_summary_keyboard())
-        state['last_message_id'] = sent_message.message_id
-        user_state[chat_id] = state
+        # When first showing summary, we are coming from quantity selection, so push the state
+        push_state(chat_id, {'step': 'summary'})
+        bot.send_message(chat_id, summary_text, parse_mode='HTML', reply_markup=get_summary_keyboard())
 
 def process_quantity(message, quantity):
-    state = user_state.get(message.chat.id, {})
+    state = get_current_state(message.chat.id)
     service = find_service_by_id(state.get('service_id'))
 
     if not service:
@@ -716,29 +903,11 @@ def process_quantity(message, quantity):
         bot.send_message(message.chat.id, "Please choose a quantity:", reply_markup=get_quantity_keyboard())
         return
 
-    state['quantity'] = quantity
-    state['step'] = 'summary'
-    user_state[message.chat.id] = state
-
-    # Calculate final amount for the summary
-    final_amount = (float(service['price']) / 1000) * quantity * PROFIT_MARGIN
-    
-    summary_text = (
-        f"<b>📝 Order Summary</b>\n\n"
-        f"🟢 Platform: {service['platform']}\n"
-        f"🟢 Service: {service['service']}\n"
-        f"🟢 Link: {state['link']}\n"
-        f"🟢 Quantity: {quantity}\n"
-        f"💰 <b>Total Amount: ₹{final_amount:.2f}</b>"
-    )
-    
-    # Store the message ID so we can edit it later
-    sent_message = bot.send_message(message.chat.id, summary_text, parse_mode='HTML', reply_markup=get_summary_keyboard())
-    state['last_message_id'] = sent_message.message_id
-    user_state[message.chat.id] = state
+    push_state(message.chat.id, {'quantity': quantity})
+    show_order_summary(message.chat.id)
 
 def send_payment_instructions(message):
-    state = user_state.get(message.chat.id, {})
+    state = get_current_state(message.chat.id)
     service = find_service_by_id(state.get('service_id'))
     quantity = state.get('quantity')
 
@@ -776,21 +945,7 @@ def send_payment_instructions(message):
         logger.warning(f"Could not remove QR code file {qr_path}: {e}")
         pass
         
-    state['payment_sent'] = True
-
-@bot.callback_query_handler(func=lambda call: call.data == 'back_to_summary')
-def handle_back_to_summary(call):
-    logger.info(f"User {call.message.chat.id} going back to summary")
-    bot.answer_callback_query(call.id)
-    user_state[call.message.chat.id]['step'] = 'summary'
-    show_order_summary(call.message.chat.id)
-
-@bot.callback_query_handler(func=lambda call: call.data == 'back_to_payment')
-def handle_back_to_payment(call):
-    logger.info(f"User {call.message.chat.id} going back to payment")
-    bot.answer_callback_query(call.id)
-    user_state[call.message.chat.id]['step'] = 'payment'
-    send_payment_instructions(call.message)
+    push_state(message.chat.id, {'payment_sent': True})
 
 @bot.callback_query_handler(func=lambda call: call.data == 'manageraccess_info')
 def send_manageraccess_info_callback(call):
@@ -824,6 +979,73 @@ def send_manageraccess_info_callback(call):
     bot.answer_callback_query(call.id)
     bot.send_message(call.message.chat.id, text, parse_mode='HTML')
 
+def show_service_details(chat_id, message_id):
+    state = get_current_state(chat_id)
+    service = find_service_by_id(state.get('service_id'))
+
+    if not service:
+        bot.edit_message_text("An error occurred, please try again.", chat_id, message_id)
+        return
+
+    # Calculate user-facing price with profit margin
+    price_per_1000_user = float(service['price']) * PROFIT_MARGIN
+
+    # Generate example prices safely and dynamically
+    example_prices = ""
+    min_q = service.get('min')
+    max_q = service.get('max')
+
+    if min_q and max_q and min_q > 0:
+        # Dynamically create quantities based on the service's minimum
+        multipliers = [1, 2, 5, 10]
+        quantities_to_show = [min_q * m for m in multipliers if (min_q * m) <= max_q]
+        
+        # If no multipliers work (e.g., min is very large), just show the min
+        if not quantities_to_show:
+            quantities_to_show = [min_q]
+
+        # Determine the service "unit" (e.g., followers, likes)
+        service_name_lower = service['service'].lower()
+        service_unit = 'units'
+        if 'follower' in service_name_lower: service_unit = 'followers'
+        elif 'like' in service_name_lower: service_unit = 'likes'
+        elif 'view' in service_name_lower: service_unit = 'views'
+        elif 'subscribe' in service_name_lower: service_unit = 'subscribers'
+        elif 'member' in service_name_lower: service_unit = 'members'
+        
+        for q in quantities_to_show[:4]: # Show up to 4 examples
+            price = (price_per_1000_user / 1000) * q
+            example_prices += f"• {q} {service_unit}: <b>₹{price:.2f}</b>\n"
+    
+    details_text = (
+        f"<b>🔍 Service Details: {service['service']}</b>\n\n"
+        f"<i>{service.get('description', '')}</i>\n\n"
+        f"<b>💰 Price per 1000:</b> ₹{price_per_1000_user:.2f}\n\n"
+        f"<b>📊 Example Prices:</b>\n{example_prices if example_prices else 'N/A'}\n"
+        f"<b>Minimum Order:</b> {min_q if min_q is not None else 'N/A'}\n"
+        f"<b>Maximum Order:</b> {max_q if max_q is not None else 'N/A'}\n\n"
+        f"<b>Refill Available:</b> {'✅ Yes' if service.get('refill') else '❌ No'}\n"
+        f"<b>Order Cancel:</b> {'✅ Yes' if service.get('cancel') else '❌ No'}\n\n"
+    )
+
+    # Add the platform-specific warning for Instagram
+    if service.get('platform') == 'Instagram':
+        details_text += (
+            f"⚠️ <b>Important Notice</b> ⚠️\n"
+            f"🌟 Private accounts are not accepted. ❌\n"
+            f"🌟 Your account must be public to receive the service. ✅\n\n"
+        )
+
+    details_text += "Click 'Next' to provide the link for your order."
+
+    bot.edit_message_text(
+        details_text,
+        chat_id,
+        message_id,
+        parse_mode='HTML',
+        reply_markup=get_details_keyboard()
+    )
+
 if __name__ == '__main__':
     logger.info("=== BOT IS STARTING ===")
     try:
@@ -831,7 +1053,11 @@ if __name__ == '__main__':
             os.makedirs('assets/payment_proofs')
         
         load_profit_margin()
-        load_services() # Load services into memory
+        
+        # This check ensures that if the API call fails, the bot will not start.
+        if not load_services_from_api():
+            logger.critical("Bot cannot start without services. Please check the AGENCY_API_KEY and the provider's status.")
+            sys.exit("Could not load services from the agency API. Exiting.")
         
         logger.info("Bot polling started...")
         bot.infinity_polling()
