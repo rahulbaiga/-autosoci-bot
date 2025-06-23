@@ -573,7 +573,7 @@ def handle_platform_callback(call):
 def handle_category_callback(call):
     logger.info(f"User {call.message.chat.id} selected: {call.data}")
     bot.answer_callback_query(call.id)
-    
+
     _, platform, category = call.data.split('_', 2)
     push_state(call.message.chat.id, {'step': 'service', 'category': category})
     bot.edit_message_text(f"You selected <b>{category}</b>. Now choose a service:", call.message.chat.id, call.message.message_id, parse_mode='HTML', reply_markup=get_service_keyboard(platform, category))
@@ -611,12 +611,12 @@ def handle_details_next(call):
 
     # Check for special cases like YouTube WatchTime that might have different prompts or flows
     if service['platform'] == 'YouTube' and 'WatchTime' in service['service']:
-         markup = get_link_keyboard()
-         markup.add(types.InlineKeyboardButton('ℹ️ What is Manager Access?', callback_data='manageraccess_info'))
-         bot.edit_message_text(f"✅ <b>You selected: {service['service']}</b>\n\n{service['description']}", chat_id, message_id, parse_mode='HTML', reply_markup=markup)
-         prompt = get_link_prompt(service['platform'], service['service'])
-         bot.send_message(chat_id, f"🔗 <b>Next Step:</b> {prompt}", parse_mode='HTML')
-         return
+        markup = get_link_keyboard()
+        markup.add(types.InlineKeyboardButton('ℹ️ What is Manager Access?', callback_data='manageraccess_info'))
+        bot.edit_message_text(f"✅ <b>You selected: {service['service']}</b>\n\n{service['description']}", chat_id, message_id, parse_mode='HTML', reply_markup=markup)
+        prompt = get_link_prompt(service['platform'], service['service'])
+        bot.send_message(chat_id, f"🔗 <b>Next Step:</b> {prompt}", parse_mode='HTML')
+        return
 
     # Standard service link prompt
     prompt = get_link_prompt(service['platform'], service['service'])
