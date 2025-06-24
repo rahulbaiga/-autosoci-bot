@@ -54,13 +54,6 @@ loaded_services = {}
 # --- ANALYTICS ---
 admin_analytics = {'total_orders': 0}
 
-# --- USER TRACKING FOR ANNOUNCEMENTS ---
-bot_users = set()
-# --- ORDER TRACKING FOR DELAYED CONFIRMATION ---
-pending_orders = {}
-# --- TRACK PROCESSED ORDERS TO PREVENT MULTIPLE PROCESSING ---
-processed_orders = set()
-
 def load_profit_margin():
     """Loads the profit margin from a file, otherwise uses default."""
     global PROFIT_MARGIN
@@ -398,33 +391,30 @@ def poll_order_status(user_id, order_id):
     state = user_state.get(user_id)
     if not state:
         return
-    import threading
-    def poll():
-        while True:
-            status_data = get_order_status(order_id)
-            if not status_data:
-                bot.send_message(user_id, "⚠️ Could not fetch order status. Will retry in 1 minute.")
-                time.sleep(60)
-                continue
-            status = status_data.get('status', '').lower()
-            if status == 'completed':
-                bot.send_message(user_id, f"🎉 <b>Your order (ID: {order_id}) has been successfully delivered!</b>", parse_mode='HTML')
-                user_state.pop(user_id, None)
-                break
-            elif status in ['canceled', 'fail']:
-                bot.send_message(user_id, f"❌ <b>Your order (ID: {order_id}) could not be completed. Please contact support.</b>", parse_mode='HTML')
-                user_state.pop(user_id, None)
-                break
-            elif status == 'partial':
-                remains = status_data.get('remains', '?')
-                bot.send_message(user_id, f"⚠️ <b>Your order (ID: {order_id}) was partially completed. Remaining: {remains}</b>", parse_mode='HTML')
-                user_state.pop(user_id, None)
-                break
-            else:
-                # In progress or awaiting
-                bot.send_message(user_id, f"⏳ <b>Your order (ID: {order_id}) is still processing. Status: {status_data.get('status', 'Unknown')}</b>", parse_mode='HTML')
-                time.sleep(60)  # 1 minute
-    threading.Thread(target=poll, daemon=True).start()
+    while True:
+        status_data = get_order_status(order_id)
+        if not status_data:
+            bot.send_message(user_id, "⚠️ Could not fetch order status. Will retry in 5 minutes.")
+            time.sleep(300)
+            continue
+        status = status_data.get('status', '').lower()
+        if status == 'completed':
+            bot.send_message(user_id, f"🎉 <b>Your order (ID: {order_id}) has been successfully delivered!</b>", parse_mode='HTML')
+            user_state.pop(user_id, None)
+            break
+        elif status in ['canceled', 'fail']:
+            bot.send_message(user_id, f"❌ <b>Your order (ID: {order_id}) could not be completed. Please contact support.</b>", parse_mode='HTML')
+            user_state.pop(user_id, None)
+            break
+        elif status == 'partial':
+            remains = status_data.get('remains', '?')
+            bot.send_message(user_id, f"⚠️ <b>Your order (ID: {order_id}) was partially completed. Remaining: {remains}</b>", parse_mode='HTML')
+            user_state.pop(user_id, None)
+            break
+        else:
+            # In progress or awaiting
+            bot.send_message(user_id, f"⏳ <b>Your order (ID: {order_id}) is still processing. Status: {status_data.get('status', 'Unknown')}</b>", parse_mode='HTML')
+            time.sleep(300)  # 5 minutes
 
 def get_admin_keyboard():
     markup = types.InlineKeyboardMarkup(row_width=2)
@@ -433,14 +423,12 @@ def get_admin_keyboard():
         types.InlineKeyboardButton('🔄 Bot Status', callback_data='admin_status')
     )
     markup.add(
-        types.InlineKeyboardButton("💰 Set Profit Margin", callback_data="set_margin"),
-        types.InlineKeyboardButton("📢 Send Announcement", callback_data="send_announcement")
+        types.InlineKeyboardButton("💰 Set Profit Margin", callback_data="set_margin")
     )
     return markup
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    bot_users.add(message.chat.id)
     logger.info(f"User {message.chat.id} started the bot. Checking for admin privileges...")
     
     # Check if the user is an admin
@@ -787,198 +775,42 @@ def prompt_payment_proof(message):
 def handle_admin_approval(call):
     action, user_id, order_id = call.data.split('_', 2)
     user_id = int(user_id)
-    
-    # Check if this order has already been processed
-    if order_id in processed_orders:
-        bot.answer_callback_query(call.id, "This order has already been processed.", show_alert=True)
-        return
-    
     state = get_current_state(user_id)
     if not state or state.get('step') != 'pending_approval':
         bot.answer_callback_query(call.id, "Order not found or already processed.")
         return
-    
-    # Mark this order as processed immediately to prevent multiple clicks
-    processed_orders.add(order_id)
-    
     if action == 'approve':
+        bot.answer_callback_query(call.id, "Order approved!")
+        
         service = find_service_by_id(state['service_id'])
         service_id = service.get('api_service_id')
+        
         if not service_id:
-            logger.error(f"Order processing failed for user {user_id}: 'api_service_id' missing")
-            bot.answer_callback_query(call.id, "Service configuration error!", show_alert=True)
+            logger.error(f"Order approval failed for user {user_id}: 'api_service_id' missing for service '{service.get('service')}'")
+            bot.send_message(user_id, "❌ <b>There was a configuration error with this service. Please contact support.</b>", parse_mode='HTML')
+            bot.send_message(call.message.chat.id, f"<b>APPROVAL FAILED:</b> The service '{service.get('service')}' is missing its 'api_service_id' in the loaded configuration. This can happen if the agency API did not provide an ID for this service. Please check the bot's startup logs.", parse_mode='HTML')
             return
-        logger.info(f"Placing order for user {user_id} with service_id {service_id}")
-        agency_order_id = place_agency_order(service_id, state['link'], state['quantity'])
-        if agency_order_id:
-            user_state[user_id] = {'step_stack': [{'step': 'processing', 'agency_order_id': agency_order_id}]}
-            bot.send_message(
-                user_id, 
-                f"✅ <b>Your payment has been approved and order is now being processed!</b>\n"
-                f"Agency Order ID: <code>{agency_order_id}</code>\n"
-                f"Thank you for your trust!", 
-                parse_mode='HTML'
-            )
-            threading.Thread(target=poll_order_status, args=(user_id, agency_order_id), daemon=True).start()
+
+        link = state['link']
+        quantity = state['quantity']
+        
+        logger.info(f"Attempting to place order for user {user_id} with service_id {service_id}")
+        order_id = place_agency_order(service_id, link, quantity)
+        
+        if order_id:
+            state['agency_order_id'] = order_id
+            bot.send_message(user_id, f"✅ <b>Your payment has been approved!</b>\nYour order is now being processed.\nOrder ID: <code>{order_id}</code>\nThank you for your trust!", parse_mode='HTML')
+            push_state(user_id, {'step': 'processing'})
+            # Start polling in a background thread
+            threading.Thread(target=poll_order_status, args=(user_id, order_id), daemon=True).start()
         else:
-            bot.answer_callback_query(call.id, "Failed to place order with agency!", show_alert=True)
             bot.send_message(user_id, "❌ <b>There was an error placing your order with the agency. Please contact support.</b>", parse_mode='HTML')
+            state.clear()
     elif action == 'reject':
         bot.answer_callback_query(call.id, "Order rejected.")
+        # Notify user
         bot.send_message(user_id, "❌ <b>Your payment was not approved.</b>\nPlease try again or contact support if you believe this is a mistake.", parse_mode='HTML')
         state.clear()
-    
-    # Only remove the inline keyboard, do not edit the message text
-    try:
-        bot.edit_message_reply_markup(
-            call.message.chat.id,
-            call.message.message_id,
-            reply_markup=None
-        )
-    except Exception as e:
-        logger.error(f"Failed to remove inline keyboard: {e}")
-
-@bot.callback_query_handler(func=lambda call: call.data == 'manageraccess_info')
-def send_manageraccess_info_callback(call):
-    text = (
-        "<b>What \"Manager Access\" Means:</b>\n\n"
-        "Manager Access means you need to give the service provider (the company/agency) permission to upload videos to your YouTube channel. Here's what happens:\n\n"
-        "<b>1. What They Need:</b>\n"
-        "• <b>Email Access:</b> They need to be added as a <b>Manager</b> to your YouTube channel\n"
-        "• <b>Email:</b> Fastestwatchtime@gmail.com (as mentioned in the service details)\n\n"
-        "<b>2. How to Give Manager Access:</b>\n"
-        "1️⃣ Go to your <b>YouTube Studio</b>\n"
-        "2️⃣ Click on <b>Settings</b> (gear icon)\n"
-        "3️⃣ Go to <b>Channel → Advanced settings</b>\n"
-        "4️⃣ Under <b>Channel managers</b>, click <b>Add or remove managers</b>\n"
-        "5️⃣ Add the email: <b>Fastestwatchtime@gmail.com</b>\n"
-        "6️⃣ Give them <b>Manager</b> permissions (not just Editor)\n\n"
-        "<b>3. What They Do:</b>\n"
-        "• They upload 1 video to your channel\n"
-        "• This video gets the watch time and views\n"
-        "• After completion, you can make the video public or delete it\n\n"
-        "<b>4. Important Notes:</b>\n"
-        "✅ Don't remove their access while the order is running\n"
-        "✅ Don't delete the video they upload during processing\n"
-        "❌ If you delete the video/access, your order will be marked complete without delivery\n"
-        "✅ You can make the video public 1 day after completion\n\n"
-        "<b>5. Why This Method:</b>\n"
-        "YouTube's algorithm is more likely to count watch time from videos uploaded to your own channel.\n"
-        "It's more effective than trying to boost watch time on existing videos.\n"
-        "This is a common practice in the industry."
-    )
-    bot.answer_callback_query(call.id)
-    bot.send_message(call.message.chat.id, text, parse_mode='HTML')
-
-def show_service_details(chat_id, message_id):
-    state = get_current_state(chat_id)
-    service = find_service_by_id(state.get('service_id'))
-
-    if not service:
-        bot.edit_message_text("An error occurred, please try again.", chat_id, message_id)
-        return
-
-    # Use the pre-calculated price with profit margin
-    price_per_1000_user = service.get('price_with_margin', float(service['price']) * PROFIT_MARGIN)
-
-    # Generate example prices safely and dynamically
-    example_prices = ""
-    min_q = service.get('min')
-    max_q = service.get('max')
-
-    if min_q and max_q and min_q > 0:
-        # Dynamically create quantities based on the service's minimum
-        multipliers = [1, 2, 5, 10]
-        quantities_to_show = [min_q * m for m in multipliers if (min_q * m) <= max_q]
-        
-        # If no multipliers work (e.g., min is very large), just show the min
-        if not quantities_to_show:
-            quantities_to_show = [min_q]
-
-        # Determine the service "unit" (e.g., followers, likes)
-        service_name_lower = service['service'].lower()
-        service_unit = 'units'
-        if 'follower' in service_name_lower: service_unit = 'followers'
-        elif 'like' in service_name_lower: service_unit = 'likes'
-        elif 'view' in service_name_lower: service_unit = 'views'
-        elif 'subscribe' in service_name_lower: service_unit = 'subscribers'
-        elif 'member' in service_name_lower: service_unit = 'members'
-        
-        for q in quantities_to_show[:4]: # Show up to 4 examples
-            price = (price_per_1000_user / 1000) * q
-            example_prices += f"• {q} {service_unit}: <b>₹{price:.2f}</b>\n"
-    
-    details_text = (
-        f"<b>🔍 Service Details: {service['service']}</b>\n\n"
-        f"<i>{service.get('description', '')}</i>\n\n"
-        f"<b>💰 Price per 1000:</b> ₹{price_per_1000_user:.2f}\n\n"
-        f"<b>📊 Example Prices:</b>\n{example_prices if example_prices else 'N/A'}\n"
-        f"<b>Minimum Order:</b> {min_q if min_q is not None else 'N/A'}\n"
-        f"<b>Maximum Order:</b> {max_q if max_q is not None else 'N/A'}\n\n"
-        f"<b>Refill Available:</b> {'✅ Yes' if service.get('refill') else '❌ No'}\n"
-        f"<b>Order Cancel:</b> {'✅ Yes' if service.get('cancel') else '❌ No'}\n\n"
-    )
-
-    # Add the platform-specific warning for Instagram
-    if service.get('platform') == 'Instagram':
-        details_text += (
-            f"⚠️ <b>Important Notice</b> ⚠️\n"
-            f"🌟 Private accounts are not accepted. ❌\n"
-            f"🌟 Your account must be public to receive the service. ✅\n\n"
-        )
-
-    details_text += "Click 'Next' to provide the link for your order."
-
-    bot.edit_message_text(
-        details_text,
-        chat_id,
-        message_id,
-        parse_mode='HTML',
-        reply_markup=get_details_keyboard()
-    )
-
-@bot.callback_query_handler(func=lambda call: call.data == 'send_announcement')
-def handle_send_announcement_prompt(call):
-    if str(call.message.chat.id) not in ADMIN_ID.split(','):
-        bot.answer_callback_query(call.id, "You are not authorized.", show_alert=True)
-        return
-    push_state(call.message.chat.id, {'step': 'awaiting_announcement'})
-    bot.answer_callback_query(call.id)
-    bot.edit_message_text(
-        f"📢 <b>Send Announcement to All Users</b>\n\n"
-        f"Please enter your announcement message.\n"
-        f"This will be sent to all {len(bot_users)} users who have used the bot.\n\n"
-        f"<i>Type your message below:</i>",
-        call.message.chat.id,
-        call.message.message_id,
-        parse_mode='HTML'
-    )
-
-@bot.message_handler(func=lambda m: get_current_state(m.chat.id).get('step') == 'awaiting_announcement')
-def handle_announcement_message(message):
-    if str(message.chat.id) not in ADMIN_ID.split(','):
-        return
-    announcement_text = message.text
-    success_count = 0
-    failed_count = 0
-    for user_id in bot_users:
-        try:
-            bot.send_message(user_id, f"📢 <b>ANNOUNCEMENT</b>\n\n{announcement_text}", parse_mode='HTML')
-            success_count += 1
-        except Exception as e:
-            logger.error(f"Failed to send announcement to user {user_id}: {e}")
-            failed_count += 1
-    bot.reply_to(
-        message, 
-        f"✅ <b>Announcement Sent!</b>\n\n"
-        f"📊 Results:\n"
-        f"✅ Successfully sent: {success_count} users\n"
-        f"❌ Failed to send: {failed_count} users\n"
-        f"📢 Total users: {len(bot_users)}",
-        parse_mode='HTML'
-    )
-    pop_state(message.chat.id)
-    bot.send_message(message.chat.id, "Returning to the admin panel.", reply_markup=get_admin_keyboard())
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('admin_'))
 def handle_admin_callbacks(call):
@@ -1124,6 +956,105 @@ def send_payment_instructions(message):
         
     push_state(message.chat.id, {'payment_sent': True})
 
+@bot.callback_query_handler(func=lambda call: call.data == 'manageraccess_info')
+def send_manageraccess_info_callback(call):
+    text = (
+        "<b>What \"Manager Access\" Means:</b>\n\n"
+        "Manager Access means you need to give the service provider (the company/agency) permission to upload videos to your YouTube channel. Here's what happens:\n\n"
+        "<b>1. What They Need:</b>\n"
+        "• <b>Email Access:</b> They need to be added as a <b>Manager</b> to your YouTube channel\n"
+        "• <b>Email:</b> Fastestwatchtime@gmail.com (as mentioned in the service details)\n\n"
+        "<b>2. How to Give Manager Access:</b>\n"
+        "1️⃣ Go to your <b>YouTube Studio</b>\n"
+        "2️⃣ Click on <b>Settings</b> (gear icon)\n"
+        "3️⃣ Go to <b>Channel → Advanced settings</b>\n"
+        "4️⃣ Under <b>Channel managers</b>, click <b>Add or remove managers</b>\n"
+        "5️⃣ Add the email: <b>Fastestwatchtime@gmail.com</b>\n"
+        "6️⃣ Give them <b>Manager</b> permissions (not just Editor)\n\n"
+        "<b>3. What They Do:</b>\n"
+        "• They upload 1 video to your channel\n"
+        "• This video gets the watch time and views\n"
+        "• After completion, you can make the video public or delete it\n\n"
+        "<b>4. Important Notes:</b>\n"
+        "✅ Don't remove their access while the order is running\n"
+        "✅ Don't delete the video they upload during processing\n"
+        "❌ If you delete the video/access, your order will be marked complete without delivery\n"
+        "✅ You can make the video public 1 day after completion\n\n"
+        "<b>5. Why This Method:</b>\n"
+        "YouTube's algorithm is more likely to count watch time from videos uploaded to your own channel.\n"
+        "It's more effective than trying to boost watch time on existing videos.\n"
+        "This is a common practice in the industry."
+    )
+    bot.answer_callback_query(call.id)
+    bot.send_message(call.message.chat.id, text, parse_mode='HTML')
+
+def show_service_details(chat_id, message_id):
+    state = get_current_state(chat_id)
+    service = find_service_by_id(state.get('service_id'))
+
+    if not service:
+        bot.edit_message_text("An error occurred, please try again.", chat_id, message_id)
+        return
+
+    # Use the pre-calculated price with profit margin
+    price_per_1000_user = service.get('price_with_margin', float(service['price']) * PROFIT_MARGIN)
+
+    # Generate example prices safely and dynamically
+    example_prices = ""
+    min_q = service.get('min')
+    max_q = service.get('max')
+
+    if min_q and max_q and min_q > 0:
+        # Dynamically create quantities based on the service's minimum
+        multipliers = [1, 2, 5, 10]
+        quantities_to_show = [min_q * m for m in multipliers if (min_q * m) <= max_q]
+        
+        # If no multipliers work (e.g., min is very large), just show the min
+        if not quantities_to_show:
+            quantities_to_show = [min_q]
+
+        # Determine the service "unit" (e.g., followers, likes)
+        service_name_lower = service['service'].lower()
+        service_unit = 'units'
+        if 'follower' in service_name_lower: service_unit = 'followers'
+        elif 'like' in service_name_lower: service_unit = 'likes'
+        elif 'view' in service_name_lower: service_unit = 'views'
+        elif 'subscribe' in service_name_lower: service_unit = 'subscribers'
+        elif 'member' in service_name_lower: service_unit = 'members'
+        
+        for q in quantities_to_show[:4]: # Show up to 4 examples
+            price = (price_per_1000_user / 1000) * q
+            example_prices += f"• {q} {service_unit}: <b>₹{price:.2f}</b>\n"
+    
+    details_text = (
+        f"<b>🔍 Service Details: {service['service']}</b>\n\n"
+        f"<i>{service.get('description', '')}</i>\n\n"
+        f"<b>💰 Price per 1000:</b> ₹{price_per_1000_user:.2f}\n\n"
+        f"<b>📊 Example Prices:</b>\n{example_prices if example_prices else 'N/A'}\n"
+        f"<b>Minimum Order:</b> {min_q if min_q is not None else 'N/A'}\n"
+        f"<b>Maximum Order:</b> {max_q if max_q is not None else 'N/A'}\n\n"
+        f"<b>Refill Available:</b> {'✅ Yes' if service.get('refill') else '❌ No'}\n"
+        f"<b>Order Cancel:</b> {'✅ Yes' if service.get('cancel') else '❌ No'}\n\n"
+    )
+
+    # Add the platform-specific warning for Instagram
+    if service.get('platform') == 'Instagram':
+        details_text += (
+            f"⚠️ <b>Important Notice</b> ⚠️\n"
+            f"🌟 Private accounts are not accepted. ❌\n"
+            f"🌟 Your account must be public to receive the service. ✅\n\n"
+        )
+
+    details_text += "Click 'Next' to provide the link for your order."
+
+    bot.edit_message_text(
+        details_text,
+        chat_id,
+        message_id,
+        parse_mode='HTML',
+        reply_markup=get_details_keyboard()
+    )
+
 if __name__ == '__main__':
     logger.info("=== BOT IS STARTING ===")
     try:
@@ -1138,8 +1069,7 @@ if __name__ == '__main__':
             sys.exit("Could not load services from the agency API. Exiting.")
         
         logger.info("Bot polling started...")
-        # Use faster polling for more responsive bot
-        bot.infinity_polling(timeout=5, long_polling_timeout=2)
+        bot.infinity_polling()
     except Exception as e:
         logger.critical(f"An unrecoverable error occurred: {e}", exc_info=True)
     finally:

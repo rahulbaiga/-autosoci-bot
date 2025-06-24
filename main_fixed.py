@@ -398,33 +398,30 @@ def poll_order_status(user_id, order_id):
     state = user_state.get(user_id)
     if not state:
         return
-    import threading
-    def poll():
-        while True:
-            status_data = get_order_status(order_id)
-            if not status_data:
-                bot.send_message(user_id, "⚠️ Could not fetch order status. Will retry in 1 minute.")
-                time.sleep(60)
-                continue
-            status = status_data.get('status', '').lower()
-            if status == 'completed':
-                bot.send_message(user_id, f"🎉 <b>Your order (ID: {order_id}) has been successfully delivered!</b>", parse_mode='HTML')
-                user_state.pop(user_id, None)
-                break
-            elif status in ['canceled', 'fail']:
-                bot.send_message(user_id, f"❌ <b>Your order (ID: {order_id}) could not be completed. Please contact support.</b>", parse_mode='HTML')
-                user_state.pop(user_id, None)
-                break
-            elif status == 'partial':
-                remains = status_data.get('remains', '?')
-                bot.send_message(user_id, f"⚠️ <b>Your order (ID: {order_id}) was partially completed. Remaining: {remains}</b>", parse_mode='HTML')
-                user_state.pop(user_id, None)
-                break
-            else:
-                # In progress or awaiting
-                bot.send_message(user_id, f"⏳ <b>Your order (ID: {order_id}) is still processing. Status: {status_data.get('status', 'Unknown')}</b>", parse_mode='HTML')
-                time.sleep(60)  # 1 minute
-    threading.Thread(target=poll, daemon=True).start()
+    while True:
+        status_data = get_order_status(order_id)
+        if not status_data:
+            bot.send_message(user_id, "⚠️ Could not fetch order status. Will retry in 5 minutes.")
+            time.sleep(300)
+            continue
+        status = status_data.get('status', '').lower()
+        if status == 'completed':
+            bot.send_message(user_id, f"🎉 <b>Your order (ID: {order_id}) has been successfully delivered!</b>", parse_mode='HTML')
+            user_state.pop(user_id, None)
+            break
+        elif status in ['canceled', 'fail']:
+            bot.send_message(user_id, f"❌ <b>Your order (ID: {order_id}) could not be completed. Please contact support.</b>", parse_mode='HTML')
+            user_state.pop(user_id, None)
+            break
+        elif status == 'partial':
+            remains = status_data.get('remains', '?')
+            bot.send_message(user_id, f"⚠️ <b>Your order (ID: {order_id}) was partially completed. Remaining: {remains}</b>", parse_mode='HTML')
+            user_state.pop(user_id, None)
+            break
+        else:
+            # In progress or awaiting
+            bot.send_message(user_id, f"⏳ <b>Your order (ID: {order_id}) is still processing. Status: {status_data.get('status', 'Unknown')}</b>", parse_mode='HTML')
+            time.sleep(300)  # 5 minutes
 
 def get_admin_keyboard():
     markup = types.InlineKeyboardMarkup(row_width=2)
@@ -435,6 +432,14 @@ def get_admin_keyboard():
     markup.add(
         types.InlineKeyboardButton("💰 Set Profit Margin", callback_data="set_margin"),
         types.InlineKeyboardButton("📢 Send Announcement", callback_data="send_announcement")
+    )
+    return markup
+
+def get_order_confirmation_keyboard(order_id):
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("✅ Confirm Order", callback_data=f"confirm_order_{order_id}"),
+        types.InlineKeyboardButton("❌ Reject Order", callback_data=f"reject_order_{order_id}")
     )
     return markup
 
@@ -802,41 +807,166 @@ def handle_admin_approval(call):
     processed_orders.add(order_id)
     
     if action == 'approve':
+        bot.answer_callback_query(call.id, "Payment approved! Order will be processed in 2 minutes.")
         service = find_service_by_id(state['service_id'])
-        service_id = service.get('api_service_id')
-        if not service_id:
-            logger.error(f"Order processing failed for user {user_id}: 'api_service_id' missing")
-            bot.answer_callback_query(call.id, "Service configuration error!", show_alert=True)
-            return
-        logger.info(f"Placing order for user {user_id} with service_id {service_id}")
-        agency_order_id = place_agency_order(service_id, state['link'], state['quantity'])
-        if agency_order_id:
-            user_state[user_id] = {'step_stack': [{'step': 'processing', 'agency_order_id': agency_order_id}]}
-            bot.send_message(
-                user_id, 
-                f"✅ <b>Your payment has been approved and order is now being processed!</b>\n"
-                f"Agency Order ID: <code>{agency_order_id}</code>\n"
-                f"Thank you for your trust!", 
-                parse_mode='HTML'
-            )
-            threading.Thread(target=poll_order_status, args=(user_id, agency_order_id), daemon=True).start()
-        else:
-            bot.answer_callback_query(call.id, "Failed to place order with agency!", show_alert=True)
-            bot.send_message(user_id, "❌ <b>There was an error placing your order with the agency. Please contact support.</b>", parse_mode='HTML')
+        pending_orders[order_id] = {
+            'user_id': user_id,
+            'service': service,
+            'link': state['link'],
+            'quantity': state['quantity'],
+            'amount': state.get('amount', 0),
+            'admin_message_id': call.message.message_id,
+            'admin_chat_id': call.message.chat.id,
+            'status': 'pending_confirmation'
+        }
+        bot.send_message(user_id, f"✅ <b>Your payment has been approved!</b>\nYour order will be processed shortly.\nOrder ID: <code>{order_id}</code>", parse_mode='HTML')
+        threading.Timer(120.0, lambda: request_order_confirmation(order_id)).start()
     elif action == 'reject':
         bot.answer_callback_query(call.id, "Order rejected.")
         bot.send_message(user_id, "❌ <b>Your payment was not approved.</b>\nPlease try again or contact support if you believe this is a mistake.", parse_mode='HTML')
         state.clear()
     
-    # Only remove the inline keyboard, do not edit the message text
+    # Disable the buttons immediately after processing
     try:
         bot.edit_message_reply_markup(
             call.message.chat.id,
             call.message.message_id,
             reply_markup=None
         )
+    except:
+        pass
+
+def request_order_confirmation(order_id):
+    if order_id not in pending_orders:
+        return
+    order_data = pending_orders[order_id]
+    service = order_data['service']
+    order_details = (
+        f"⏰ <b>Order Confirmation Required</b>\n\n"
+        f"📋 <b>Order ID:</b> {order_id}\n"
+        f"👤 <b>User ID:</b> {order_data['user_id']}\n"
+        f"📱 <b>Platform:</b> {service['platform']}\n"
+        f"🟢 <b>Service:</b> {service['service']}\n"
+        f"🔗 <b>Link:</b> {order_data['link']}\n"
+        f"📊 <b>Quantity:</b> {order_data['quantity']}\n"
+        f"💰 <b>Amount:</b> ₹{order_data['amount']:.2f}\n\n"
+        f"<i>Please confirm or reject this order:</i>"
+    )
+    try:
+        # Send a new message instead of editing the photo message
+        new_message = bot.send_message(
+            order_data['admin_chat_id'],
+            order_details,
+            parse_mode='HTML',
+            reply_markup=get_order_confirmation_keyboard(order_id)
+        )
+        # Update the stored message ID to the new text message
+        pending_orders[order_id]['admin_message_id'] = new_message.message_id
     except Exception as e:
-        logger.error(f"Failed to remove inline keyboard: {e}")
+        logger.error(f"Failed to send confirmation message for order {order_id}: {e}")
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('confirm_order_') or call.data.startswith('reject_order_'))
+def handle_final_order_confirmation(call):
+    if str(call.message.chat.id) not in ADMIN_ID.split(','):
+        bot.answer_callback_query(call.id, "You are not authorized.", show_alert=True)
+        return
+    
+        # Fix the callback data parsing`n    if call.data.startswith('confirm_order_'):`n        action = 'confirm_order'`n        order_id = call.data.replace('confirm_order_', '')`n    elif call.data.startswith('reject_order_'):`n        action = 'reject_order'`n        order_id = call.data.replace('reject_order_', '')`n    else:`n        bot.answer_callback_query(call.id, 'Invalid callback data.', show_alert=True)`n        return
+    order_id = f"{order_id}"
+    
+    # Check if this order has already been processed
+    if order_id in processed_orders:
+        bot.answer_callback_query(call.id, "This order has already been processed.", show_alert=True)
+        return
+    
+    if order_id not in pending_orders:
+        bot.answer_callback_query(call.id, "Order not found or already processed.", show_alert=True)
+        return
+    
+    # Mark this order as processed immediately to prevent multiple clicks
+    processed_orders.add(order_id)
+    
+    order_data = pending_orders[order_id]
+    user_id = order_data['user_id']
+    
+    if action == 'confirm_order':
+        # Only send to agency API when confirming the order
+        service = order_data['service']
+        service_id = service.get('api_service_id')
+        if not service_id:
+            logger.error(f"Order confirmation failed for user {user_id}: 'api_service_id' missing")
+            bot.answer_callback_query(call.id, "Service configuration error!", show_alert=True)
+            return
+        logger.info(f"Placing order for user {user_id} with service_id {service_id}")
+        agency_order_id = place_agency_order(service_id, order_data['link'], order_data['quantity'])
+        if agency_order_id:
+            user_state[user_id] = {'step_stack': [{'step': 'processing', 'agency_order_id': agency_order_id}]}
+            bot.send_message(
+                user_id, 
+                f"✅ <b>Your order has been confirmed and is now being processed!</b>\n"
+                f"Agency Order ID: <code>{agency_order_id}</code>\n"
+                f"Thank you for your trust!", 
+                parse_mode='HTML'
+            )
+            threading.Thread(target=poll_order_status, args=(user_id, agency_order_id), daemon=True).start()
+            bot.edit_message_text(
+                f"✅ <b>Order Confirmed and Processed</b>\n\n"
+                f"📋 <b>Order ID:</b> {order_id}\n"
+                f"👤 <b>User ID:</b> {user_id}\n"
+                f"🟢 <b>Service:</b> {service['service']}\n"
+                f"📊 <b>Quantity:</b> {order_data['quantity']}\n"
+                f"💰 <b>Amount:</b> ₹{order_data['amount']:.2f}\n"
+                f"🆔 <b>Agency Order ID:</b> {agency_order_id}\n\n"
+                f"<i>Order has been sent to agency API successfully.</i>",
+                call.message.chat.id,
+                call.message.message_id,
+                parse_mode='HTML'
+            )
+        else:
+            bot.answer_callback_query(call.id, "Failed to place order with agency!", show_alert=True)
+            bot.send_message(user_id, "❌ <b>There was an error placing your order with the agency. Please contact support.</b>", parse_mode='HTML')
+    
+    elif action == 'reject_order':
+        # Send rejection message with refund information
+        rejection_message = (
+            f"❌ <b>Order Rejected</b>\n\n"
+            f"📋 <b>Order ID:</b> {order_id}\n"
+            f"🟢 <b>Service:</b> {order_data['service']['service']}\n"
+            f"📊 <b>Quantity:</b> {order_data['quantity']}\n"
+            f"💰 <b>Amount:</b> ₹{order_data['amount']:.2f}\n"
+            f"🔗 <b>Link:</b> {order_data['link']}\n\n"
+            f"<b>Reason for rejection:</b> Order was rejected by admin for some reason.\n\n"
+            f"💳 <b>Refund Information:</b>\n"
+            f"Your payment of ₹{order_data['amount']:.2f} will be refunded within 5 hours.\n"
+            f"Please contact support if you don't receive your refund.\n\n"
+            f"📞 <b>Support:</b> Contact us if you have any questions."
+        )
+        bot.send_message(user_id, rejection_message, parse_mode='HTML')
+        
+        bot.edit_message_text(
+            f"❌ <b>Order Rejected</b>\n\n"
+            f"📋 <b>Order ID:</b> {order_id}\n"
+            f"👤 <b>User ID:</b> {user_id}\n"
+            f"🟢 <b>Service:</b> {order_data['service']['service']}\n"
+            f"📊 <b>Quantity:</b> {order_data['quantity']}\n"
+            f"💰 <b>Amount:</b> ₹{order_data['amount']:.2f}\n\n"
+            f"<i>Order has been rejected. User notified about refund.</i>",
+            call.message.chat.id,
+            call.message.message_id,
+            parse_mode='HTML'
+        )
+    
+    del pending_orders[order_id]
+    
+    # Disable the buttons immediately after processing
+    try:
+        bot.edit_message_reply_markup(
+            call.message.chat.id,
+            call.message.message_id,
+            reply_markup=None
+        )
+    except:
+        pass
 
 @bot.callback_query_handler(func=lambda call: call.data == 'manageraccess_info')
 def send_manageraccess_info_callback(call):
@@ -1138,8 +1268,7 @@ if __name__ == '__main__':
             sys.exit("Could not load services from the agency API. Exiting.")
         
         logger.info("Bot polling started...")
-        # Use faster polling for more responsive bot
-        bot.infinity_polling(timeout=5, long_polling_timeout=2)
+        bot.infinity_polling()
     except Exception as e:
         logger.critical(f"An unrecoverable error occurred: {e}", exc_info=True)
     finally:
