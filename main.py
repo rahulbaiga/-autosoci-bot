@@ -344,7 +344,10 @@ def get_summary_keyboard():
 
 def get_payment_keyboard():
     markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.add(types.InlineKeyboardButton('⬅️ Back', callback_data="back_to_previous"))
+    markup.add(
+        types.InlineKeyboardButton('✅ Confirm Order', callback_data="confirm_payment_order"),
+        types.InlineKeyboardButton('⬅️ Back', callback_data="back_to_previous")
+    )
     return markup
 
 def get_payment_proof_keyboard():
@@ -714,13 +717,6 @@ def handle_summary_callback(call):
     bot.answer_callback_query(call.id)
     
     push_state(call.message.chat.id, {'step': 'payment'})
-    congrats_msg = (
-        "🎉 <b>Congratulations!</b> 🎉\n\n"
-        "Thank you for choosing <b>AUTOSOCI</b> to boost your social presence! 🚀\n"
-        "You're just one step away from growing your account with 100% organic results. 💚\n\n"
-        "Let's complete your order and get you started on your journey to success! 🌟"
-    )
-    bot.send_message(call.message.chat.id, congrats_msg, parse_mode='HTML')
     send_payment_instructions(call.message)
 
 @bot.message_handler(content_types=['photo'], func=lambda m: get_current_state(m.chat.id).get('step') == 'payment')
@@ -730,52 +726,95 @@ def handle_payment_proof(message):
     service = find_service_by_id(state.get('service_id'))
     quantity = state.get('quantity')
     link = state.get('link')
+    order_id = state.get('order_id')
+
+    # Validate required data
+    if not all([service, quantity, link, order_id]):
+        logger.error(f"Missing required order data for user {message.chat.id}: service={bool(service)}, quantity={quantity}, link={link}, order_id={order_id}")
+        bot.reply_to(message, "❌ Error: Order information is incomplete. Please start over.")
+        return
 
     # Calculate prices for admin notification
     actual_cost = (float(service['price']) / 1000) * quantity
     user_price = actual_cost * PROFIT_MARGIN
     profit = user_price - actual_cost
 
+    # Ensure payment_proofs directory exists
+    payment_proofs_dir = "payment_proofs"
+    if not os.path.exists(payment_proofs_dir):
+        os.makedirs(payment_proofs_dir)
+        logger.info(f"Created payment_proofs directory: {payment_proofs_dir}")
+
     # Save payment proof and notify admin
-    file_info = bot.get_file(message.photo[-1].file_id)
-    downloaded_file = bot.download_file(file_info.file_path)
-    proof_path = f"payment_proofs/payment_{message.chat.id}_{state['order_id']}.jpg"
-    with open(proof_path, 'wb') as new_file:
-        new_file.write(downloaded_file)
+    try:
+        file_info = bot.get_file(message.photo[-1].file_id)
+        downloaded_file = bot.download_file(file_info.file_path)
+        proof_path = f"{payment_proofs_dir}/payment_{message.chat.id}_{order_id}.jpg"
+        
+        with open(proof_path, 'wb') as new_file:
+            new_file.write(downloaded_file)
+        
+        logger.info(f"Payment proof saved successfully: {proof_path}")
+    except Exception as e:
+        logger.error(f"Failed to save payment proof for user {message.chat.id}: {e}")
+        bot.reply_to(message, "❌ Error saving payment proof. Please try again.")
+        return
 
     bot.reply_to(message, "✅ Payment screenshot received! Your order is now pending admin verification.")
 
     admin_analytics['total_orders'] += 1
     admin_message = (
-        f"New Order Pending Approval\n"
-        f"🟢 User ID: {message.chat.id}\n"
-        f"🟢 Platform: {service['platform']}\n"
-        f"🟢 Category: {service['category']}\n"
-        f"🟢 Service: {service['service']}\n"
-        f"🟢 Link: {link}\n"
-        f"🟢 Quantity: {quantity}\n"
-        f"💰 Amount (User): ₹{user_price:.2f}\n"
-        f"💵 Cost (Actual): ₹{actual_cost:.2f}\n"
-        f"📈 Profit: ₹{profit:.2f}\n\n"
-        f"Analytics:\n"
-        f"📊 Total Orders Processed: {admin_analytics['total_orders']}\n\n"
-        f"Support Team WhatsApp Group:\n"
-        f"🔗 Join Support Group (https://chat.whatsapp.com/GvLbK18vIfELWWQgKYyoKw)\n\n"
+        f"🆕 <b>New Order Pending Approval</b>\n\n"
+        f"👤 <b>User ID:</b> {message.chat.id}\n"
+        f"🆔 <b>Order ID:</b> {order_id}\n"
+        f"📱 <b>Platform:</b> {service['platform']}\n"
+        f"📂 <b>Category:</b> {service['category']}\n"
+        f"🔧 <b>Service:</b> {service['service']}\n"
+        f"🔗 <b>Link:</b> {link}\n"
+        f"📊 <b>Quantity:</b> {quantity}\n"
+        f"💰 <b>Amount (User):</b> ₹{user_price:.2f}\n"
+        f"💵 <b>Cost (Actual):</b> ₹{actual_cost:.2f}\n"
+        f"📈 <b>Profit:</b> ₹{profit:.2f}\n\n"
+        f"📊 <b>Analytics:</b>\n"
+        f"Total Orders Processed: {admin_analytics['total_orders']}\n\n"
+        f"📞 <b>Support Team WhatsApp Group:</b>\n"
+        f"🔗 https://chat.whatsapp.com/GvLbK18vIfELWWQgKYyoKw\n\n"
         f"Please review the payment proof and approve or reject the order."
     )
     
     markup = types.InlineKeyboardMarkup()
-    approve_btn = types.InlineKeyboardButton("✅ Approve", callback_data=f"approve_{message.chat.id}_{state['order_id']}")
-    reject_btn = types.InlineKeyboardButton("❌ Reject", callback_data=f"reject_{message.chat.id}_{state['order_id']}")
+    approve_btn = types.InlineKeyboardButton("✅ Approve", callback_data=f"approve_{message.chat.id}_{order_id}")
+    reject_btn = types.InlineKeyboardButton("❌ Reject", callback_data=f"reject_{message.chat.id}_{order_id}")
     markup.add(approve_btn, reject_btn)
     
     # Send the proof image with the caption to all admins
-    with open(proof_path, 'rb') as proof_photo:
-        for admin in ADMIN_ID.split(','):
-            try:
-                bot.send_photo(admin, proof_photo, caption=admin_message, reply_markup=markup)
-            except Exception as e:
-                logger.error(f"Failed to send order notification to admin {admin}: {e}")
+    admin_ids = ADMIN_ID.split(',')
+    success_count = 0
+    
+    try:
+        with open(proof_path, 'rb') as proof_photo:
+            for admin in admin_ids:
+                admin = admin.strip()  # Remove any whitespace
+                if not admin:  # Skip empty admin IDs
+                    continue
+                    
+                try:
+                    bot.send_photo(admin, proof_photo, caption=admin_message, reply_markup=markup, parse_mode='HTML')
+                    success_count += 1
+                    logger.info(f"Order notification sent successfully to admin {admin}")
+                except Exception as e:
+                    logger.error(f"Failed to send order notification to admin {admin}: {e}")
+                    
+    except Exception as e:
+        logger.error(f"Failed to read payment proof file {proof_path}: {e}")
+        bot.reply_to(message, "❌ Error processing payment proof. Please contact support.")
+        return
+
+    if success_count == 0:
+        logger.error(f"No admin notifications were sent successfully for user {message.chat.id}")
+        bot.reply_to(message, "⚠️ Warning: Admin notification failed. Please contact support immediately.")
+    else:
+        logger.info(f"Order notification sent to {success_count}/{len(admin_ids)} admins for user {message.chat.id}")
 
     push_state(message.chat.id, {'step': 'pending_approval'})
 
@@ -825,7 +864,16 @@ def handle_admin_approval(call):
             bot.send_message(user_id, "❌ <b>There was an error placing your order with the agency. Please contact support.</b>", parse_mode='HTML')
     elif action == 'reject':
         bot.answer_callback_query(call.id, "Order rejected.")
-        bot.send_message(user_id, "❌ <b>Your payment was not approved.</b>\nPlease try again or contact support if you believe this is a mistake.", parse_mode='HTML')
+        bot.send_message(user_id, 
+            "❌ <b>Your order was not approved for some reason.</b>\n\n"
+            "📞 <b>Please contact our support team:</b>\n"
+            "🔗 <a href='https://chat.whatsapp.com/GvLbK18vIfELWWQgKYyoKw'>Join Support Group</a>\n\n"
+            "💡 <b>What to do:</b>\n"
+            "1. Click the link above to join our support group\n"
+            "2. Share your order details with the support team\n"
+            "3. They will help you resolve the issue\n\n"
+            "🆔 <b>Your Order ID:</b> <code>{order_id}</code>", 
+            parse_mode='HTML', disable_web_page_preview=True)
         state.clear()
     
     # Only remove the inline keyboard, do not edit the message text
@@ -837,6 +885,27 @@ def handle_admin_approval(call):
         )
     except Exception as e:
         logger.error(f"Failed to remove inline keyboard: {e}")
+
+@bot.callback_query_handler(func=lambda call: call.data == "confirm_payment_order")
+def handle_confirm_payment_order(call):
+    """Handle when user clicks 'Confirm Order' button after seeing payment instructions."""
+    logger.info(f"User {call.message.chat.id} confirmed payment order.")
+    bot.answer_callback_query(call.id)
+    
+    # Send a clear and simple message asking for payment screenshot
+    confirm_message = (
+        "✅ <b>Order Confirmed!</b>\n\n"
+        "📸 <b>Please send your payment screenshot now.</b>\n\n"
+        "💡 <b>How to:</b>\n"
+        "1. Complete the payment using the QR code\n"
+        "2. Take a screenshot of the payment\n"
+        "3. Send it here"
+    )
+    
+    bot.send_message(call.message.chat.id, confirm_message, parse_mode='HTML')
+    
+    # Update user state to payment step
+    push_state(call.message.chat.id, {'step': 'payment'})
 
 @bot.callback_query_handler(func=lambda call: call.data == 'manageraccess_info')
 def send_manageraccess_info_callback(call):
@@ -1088,22 +1157,37 @@ def send_payment_instructions(message):
     service = find_service_by_id(state.get('service_id'))
     quantity = state.get('quantity')
 
+    if not all([service, quantity]):
+        logger.error(f"Missing service or quantity for user {message.chat.id}")
+        bot.reply_to(message, "❌ Error: Order information is incomplete. Please start over.")
+        return
+
     # Calculate final amount with profit margin
     final_amount = (float(service['price']) / 1000) * quantity * PROFIT_MARGIN
     
+    # Generate unique order ID with timestamp and user ID
     order_id = f"{message.chat.id}_{int(time.time())}"
-    state['order_id'] = order_id
+    
+    # Update state with order_id
+    push_state(message.chat.id, {'order_id': order_id})
     
     upi_id = os.getenv('UPI_ID')
     amount = final_amount
     
     logger.info(f"Generating QR for user {message.chat.id}, amount {amount}, order_id {order_id}")
-    qr_path = generate_upi_qr(upi_id, amount, order_id)
+    
+    try:
+        qr_path = generate_upi_qr(upi_id, amount, order_id)
+    except Exception as e:
+        logger.error(f"Failed to generate QR code for user {message.chat.id}: {e}")
+        bot.reply_to(message, "❌ Error generating payment QR code. Please try again.")
+        return
     
     caption = (
         f"🟢 <b>Payment Instructions</b>\n"
         f"✅ Amount: <b>₹{amount}</b>\n"
-        f"✅ UPI ID: <b>{upi_id}</b>\n\n"
+        f"✅ UPI ID: <code>{upi_id}</code>\n"
+        f"🆔 Order ID: <code>{order_id}</code>\n\n"
         f"⏳ <b>Please pay within 10 minutes, or your order may expire.</b>\n\n"
         f"💡 <b>How to Pay Quickly:</b>\n"
         f"1️⃣ Tap the QR code to open it in full screen.\n"
@@ -1111,24 +1195,35 @@ def send_payment_instructions(message):
         f"3️⃣ Select 'Share'.\n"
         f"4️⃣ Choose your payment app (Google Pay, PhonePe, Paytm, etc.).\n"
         f"5️⃣ Complete the payment. The amount will be filled automatically!\n\n"
-        f"📸 <b>After payment, send a screenshot here to complete your order.</b>"
+        f"📋 <b>Or copy UPI ID:</b> Tap on the UPI ID above to copy it in one click!\n\n"
+        f"📸 <b>After payment, click 'Confirm Order' and send your payment screenshot.</b>"
     )
-    with open(qr_path, "rb") as qr:
-        bot.send_photo(message.chat.id, qr, caption=caption, parse_mode="HTML", reply_markup=get_payment_keyboard())
     
+    try:
+        with open(qr_path, "rb") as qr:
+            bot.send_photo(message.chat.id, qr, caption=caption, parse_mode="HTML", reply_markup=get_payment_keyboard())
+    except Exception as e:
+        logger.error(f"Failed to send QR code to user {message.chat.id}: {e}")
+        bot.reply_to(message, "❌ Error sending payment instructions. Please try again.")
+        return
+    
+    # Clean up QR code file
     try:
         os.remove(qr_path)
     except Exception as e:
         logger.warning(f"Could not remove QR code file {qr_path}: {e}")
-        pass
-        
-    push_state(message.chat.id, {'payment_sent': True})
+    
+    logger.info(f"Payment instructions sent successfully to user {message.chat.id}")
 
 if __name__ == '__main__':
     logger.info("=== BOT IS STARTING ===")
     try:
-        if not os.path.exists('assets/payment_proofs'):
-            os.makedirs('assets/payment_proofs')
+        # Create necessary directories
+        directories = ['assets/payment_proofs', 'payment_proofs']
+        for directory in directories:
+            if not os.path.exists(directory):
+                os.makedirs(directory)
+                logger.info(f"Created directory: {directory}")
         
         load_profit_margin()
         
@@ -1138,8 +1233,8 @@ if __name__ == '__main__':
             sys.exit("Could not load services from the agency API. Exiting.")
         
         logger.info("Bot polling started...")
-        # Use faster polling for more responsive bot
-        bot.infinity_polling(timeout=5, long_polling_timeout=2)
+        # Use faster polling for more responsive bot with better timeout handling
+        bot.infinity_polling(timeout=10, long_polling_timeout=5)
     except Exception as e:
         logger.critical(f"An unrecoverable error occurred: {e}", exc_info=True)
     finally:
