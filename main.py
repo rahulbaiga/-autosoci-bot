@@ -437,7 +437,8 @@ def get_admin_keyboard():
     )
     markup.add(
         types.InlineKeyboardButton("💰 Set Profit Margin", callback_data="set_margin"),
-        types.InlineKeyboardButton("📢 Send Announcement", callback_data="send_announcement")
+        types.InlineKeyboardButton("📢 Send Announcement", callback_data="send_announcement"),
+        types.InlineKeyboardButton("💵 Check API Balance", callback_data="admin_balance")
     )
     return markup
 
@@ -1061,6 +1062,22 @@ def handle_admin_callbacks(call):
     elif call.data == 'admin_status':
         bot.answer_callback_query(call.id)
         bot.edit_message_text(f"Bot Status:\n- Running Smoothly\n- Profit Margin: {(PROFIT_MARGIN - 1)*100:.0f}%", call.message.chat.id, call.message.message_id, reply_markup=get_admin_keyboard())
+    elif call.data == 'admin_balance':
+        url = f"https://nilidon.com/api/v2?action=balance&key={AGENCY_API_KEY}"
+        try:
+            response = requests.get(url, timeout=10)
+            data = response.json()
+            balance = data.get('balance', 'N/A')
+            currency = data.get('currency', '')
+            text = f"💵 <b>API Balance:</b> {balance} {currency}"
+        except Exception as e:
+            text = f"❌ Failed to fetch API balance.\nError: {e}"
+        bot.answer_callback_query(call.id)
+        try:
+            bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode='HTML', reply_markup=get_admin_keyboard())
+        except Exception as e:
+            if "message is not modified" not in str(e):
+                raise
 
 @bot.callback_query_handler(func=lambda call: call.data == 'set_margin')
 def handle_set_margin_prompt(call):
