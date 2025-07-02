@@ -879,7 +879,8 @@ def handle_phone_input(message):
         'order_id': order_id
     }
     create_and_send_payment_link(message.chat.id, final_amount, order_id, customer_name="User", customer_email="test@example.com", customer_contact=phone)
-    bot.send_message(message.chat.id, (
+    # Send payment instructions with Help button
+    instructions = (
         "💳 <b>Payment Instructions</b>\n\n"
         "We have sent a payment link to your phone number via SMS.\n"
         "1️⃣ Open the SMS you received from Razorpay.\n"
@@ -887,23 +888,17 @@ def handle_phone_input(message):
         "3️⃣ Once payment is successful, your order will be processed automatically!\n\n"
         "❗ <b>Do NOT pay twice for the same order.</b>\n\n"
         "If you face any issues, contact support.\n"
-        "<a href='https://chat.whatsapp.com/GvLbK18vIfELWWQgKYyoKw'>Join our WhatsApp Support Group</a>"
-    ), parse_mode='HTML', disable_web_page_preview=True)
-    # Send step-by-step screenshots to help the user, with captions
-    step_images_with_captions = [
-        ('assets/step 1.jpg', 'Step 1: Open the SMS you received from Razorpay.'),
-        ('assets/step 2.jpg', 'Step 2: Tap the payment link in the SMS.'),
-        ('assets/step3.jpg', 'Step 3: The payment page will open in your browser.'),
-        ('assets/step 4.jpg', 'Step 4: Enter your UPI/Bank details or select your payment app.'),
-        ('assets/step 5.jpg', 'Step 5: Complete the payment as shown.'),
-        ('assets/step 6 .jpg', 'Step 6: You will see a confirmation after successful payment.'),
-    ]
-    for img_path, caption in step_images_with_captions:
-        try:
-            with open(img_path, 'rb') as img_file:
-                bot.send_photo(message.chat.id, img_file, caption=caption)
-        except Exception as e:
-            logger.warning(f"Could not send image {img_path}: {e}")
+        "Join our <a href='https://chat.whatsapp.com/GvLbK18vIfELWWQgKYyoKw'>WhatsApp Support Group</a>."
+    )
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("❓ Help", callback_data="payment_help"))
+    bot.send_message(
+        message.chat.id,
+        instructions,
+        parse_mode="HTML",
+        reply_markup=markup,
+        disable_web_page_preview=True
+    )
 
 @bot.message_handler(content_types=['photo'], func=lambda m: get_current_state(m.chat.id).get('step') == 'payment')
 def handle_payment_proof(message):
@@ -1692,6 +1687,23 @@ def run_flask():
 
 def run_bot():
     bot.infinity_polling(timeout=10, long_polling_timeout=5)
+
+@bot.callback_query_handler(func=lambda call: call.data == "payment_help")
+def handle_payment_help(call):
+    # Send the screenshot and a helpful caption
+    screenshot_path = "assets/step 1.jpg"  # or whichever screenshot you want to send
+    caption = (
+        "🖼️ <b>How to Pay Using the Payment Link</b>\n\n"
+        "1️⃣ Open the SMS from Razorpay and tap the payment link.\n"
+        "2️⃣ Complete the payment in your browser.\n"
+        "3️⃣ If you face any issues, contact support."
+    )
+    try:
+        with open(screenshot_path, "rb") as photo:
+            bot.send_photo(call.message.chat.id, photo, caption=caption, parse_mode="HTML")
+    except Exception as e:
+        bot.send_message(call.message.chat.id, "❌ Unable to send help screenshot. Please contact support.")
+    bot.answer_callback_query(call.id)
 
 if __name__ == '__main__':
     logger.info("=== BOT IS STARTING ===")
