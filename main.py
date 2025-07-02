@@ -417,14 +417,35 @@ def get_link_keyboard():
     markup.add(types.InlineKeyboardButton('⬅️ Back', callback_data="back_to_previous"))
     return markup
 
-def get_quantity_keyboard():
+def get_quantity_keyboard(chat_id=None):
+    # Dynamically generate quantity options based on service price so that each is worth at least ₹1
     markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.add(
-        types.InlineKeyboardButton('100', callback_data="quantity_100"),
-        types.InlineKeyboardButton('500', callback_data="quantity_500"),
-        types.InlineKeyboardButton('1000', callback_data="quantity_1000"),
-        types.InlineKeyboardButton('5000', callback_data="quantity_5000")
-    )
+    quantities = [100, 500, 1000, 5000]
+    if chat_id is not None:
+        state = get_current_state(chat_id)
+        service = find_service_by_id(state.get('service_id'))
+        if service:
+            price_per_1k = float(service.get('price', 0))
+            valid_quantities = []
+            for q in quantities:
+                price = (price_per_1k / 1000) * q
+                if price >= 1:
+                    valid_quantities.append(q)
+            if not valid_quantities:
+                # fallback: minimum quantity for ₹1
+                if price_per_1k > 0:
+                    min_q = int((1 / (price_per_1k / 1000)) + 0.999)  # round up
+                    valid_quantities = [min_q]
+                else:
+                    valid_quantities = [100]
+            for q in valid_quantities:
+                markup.add(types.InlineKeyboardButton(str(q), callback_data=f"quantity_{q}"))
+        else:
+            for q in quantities:
+                markup.add(types.InlineKeyboardButton(str(q), callback_data=f"quantity_{q}"))
+    else:
+        for q in quantities:
+            markup.add(types.InlineKeyboardButton(str(q), callback_data=f"quantity_{q}"))
     markup.add(types.InlineKeyboardButton('Custom Quantity', callback_data="custom_quantity"))
     markup.add(types.InlineKeyboardButton('⬅️ Back', callback_data="back_to_previous"))
     return markup
@@ -661,7 +682,7 @@ def handle_back_button(call):
             bot.edit_message_text(f"✅ You selected <b>{service['service']}</b>!\n\n{prompt}", chat_id, message_id, parse_mode='HTML', reply_markup=get_link_keyboard())
 
         elif step == 'quantity':
-            bot.edit_message_text("✅ Link received! Now, how much engagement would you like?", chat_id, message_id, reply_markup=get_quantity_keyboard())
+            bot.edit_message_text("✅ Link received! Now, how much engagement would you like?", chat_id, message_id, reply_markup=get_quantity_keyboard(chat_id))
         
         elif step == 'summary':
             show_order_summary(chat_id, message_id_to_edit=message_id)
@@ -772,7 +793,7 @@ def handle_link(message):
     
     # For all other services, proceed with quantity selection
     push_state(message.chat.id, {'step': 'quantity', 'link': message.text})
-    bot.send_message(message.chat.id, "✅ Link received! Now, how much engagement would you like?", reply_markup=get_quantity_keyboard())
+    bot.send_message(message.chat.id, "✅ Link received! Now, how much engagement would you like?", reply_markup=get_quantity_keyboard(message.chat.id))
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('quantity_') or call.data == 'custom_quantity')
 def handle_quantity_callback(call):
@@ -796,14 +817,22 @@ def handle_custom_quantity_input(message):
         quantity = int(message.text.strip())
         if quantity <= 0:
             raise ValueError("Quantity must be positive.")
-        
+        state = get_current_state(message.chat.id)
+        service = find_service_by_id(state.get('service_id'))
+        if not service:
+            bot.reply_to(message, "Service not found. Please start over.")
+            return
+        price_per_1k = float(service.get('price', 0))
+        total_price = (price_per_1k / 1000) * quantity
+        if total_price < 1:
+            bot.reply_to(message, "❌ The minimum order value is ₹1. Please enter a higher quantity.")
+            bot.send_message(message.chat.id, "Please enter a new quantity (must be at least ₹1 in value):")
+            return
         # The 'awaiting_custom_quantity' step is now fulfilled. 
         # We pop it from the history before processing the quantity.
         pop_state(message.chat.id) 
-        
         # Now process the quantity, which will move to the summary step
         process_quantity(message, quantity)
-        
     except (ValueError, TypeError):
         bot.reply_to(message, "❌ Invalid input. Please enter a valid whole number (e.g., 150).")
 
@@ -1329,7 +1358,7 @@ def process_quantity(message, quantity):
     if not (min_q <= quantity <= max_q):
         bot.reply_to(message, f"❌ Quantity must be between {min_q} and {max_q} for this service.")
         # Ask for quantity again
-        bot.send_message(message.chat.id, "Please choose a quantity:", reply_markup=get_quantity_keyboard())
+        bot.send_message(message.chat.id, "Please choose a quantity:", reply_markup=get_quantity_keyboard(chat_id))
         return
 
     push_state(message.chat.id, {'quantity': quantity})
@@ -1399,6 +1428,12 @@ def send_payment_instructions(message):
     logger.info(f"Payment instructions sent successfully to user {message.chat.id}")
 
 def create_and_send_payment_link(chat_id, amount, order_id, customer_name="User", customer_email="test@example.com", customer_contact="9999999999"):
+    # If amount is less than 1, prompt user to re-enter quantity and do not proceed
+    if amount < 1:
+        bot.send_message(chat_id, "❗ Your order must be more than ₹1. Please try again. Enter a new quantity:")
+        # Set state to custom quantity so user can re-enter
+        push_state(chat_id, {'step': 'awaiting_custom_quantity'})
+        return
     url = "https://api.razorpay.com/v1/payment_links"
     data = {
         "amount": int(amount * 100),  # Razorpay expects paise
@@ -1446,7 +1481,9 @@ def create_and_send_payment_link(chat_id, amount, order_id, customer_name="User"
             all_orders[order_id]['payment_link_id'] = payment_link_id
             all_orders[order_id]['status'] = 'payment_link_created'
     else:
-        bot.send_message(chat_id, "❌ Failed to create payment link. Please try again later.")
+        # Only show this error if amount >= 1 (should not happen, but fallback)
+        if amount >= 1:
+            bot.send_message(chat_id, "❌ Failed to create payment link. Please try again later.")
 
 @bot.message_handler(commands=['check_payment'])
 def check_payment_status(message):
