@@ -10,6 +10,9 @@ import threading
 import time
 import logging
 import sys
+from flask import Flask, request, abort
+import hmac
+import hashlib
 
 # --- PROFIT MARGIN (GLOBAL) ---
 # This will be loaded from a file, with a default of 40%
@@ -1551,6 +1554,109 @@ def admin_order_status_notifier():
             logger.error(f"Error in admin_order_status_notifier: {e}")
         time.sleep(300)  # 5 minutes
 
+# --- FLASK WEBHOOK SERVER (MERGED FROM razorpay_webhook_server.py) ---
+app = Flask(__name__)
+
+RAZORPAY_WEBHOOK_SECRET = os.getenv('RAZORPAY_WEBHOOK_SECRET')
+if not RAZORPAY_WEBHOOK_SECRET or RAZORPAY_WEBHOOK_SECRET == 'your_webhook_secret':
+    logger.critical('FATAL: RAZORPAY_WEBHOOK_SECRET is not set!')
+    raise SystemExit('Webhook secret not set.')
+
+def verify_signature(request):
+    signature = request.headers.get('X-Razorpay-Signature')
+    if not signature:
+        return False
+    body = request.data
+    expected_signature = hmac.new(
+        RAZORPAY_WEBHOOK_SECRET.encode(),
+        body,
+        hashlib.sha256
+    ).hexdigest()
+    return hmac.compare_digest(signature, expected_signature)
+
+@app.route('/test', methods=['GET'])
+def test_endpoint():
+    return 'Webhook server is running', 200
+
+@app.route('/razorpay-webhook', methods=['POST'])
+def razorpay_webhook():
+    logger.info("Received webhook event")
+    load_mapping()         # Always reload mapping from disk
+    load_order_mapping()   # Always reload order mapping from disk
+    if not verify_signature(request):
+        logger.error("Invalid signature")
+        if ADMIN_ID:
+            try:
+                bot.send_message(ADMIN_ID, "[Webhook] Invalid signature received!")
+            except Exception as e:
+                logger.error(f"Failed to notify admin: {e}")
+        abort(400, "Invalid signature")
+    data = request.json
+    logger.debug(f"Webhook data: {data}")
+    if data['event'] == 'payment_link.paid':
+        payment_link_id = data['payload']['payment_link']['entity']['id']
+        chat_id = payment_link_to_chat.get(payment_link_id)
+        order_details = payment_link_to_order.get(payment_link_id)
+        if chat_id:
+            try:
+                # Place agency order if order details are available
+                if order_details:
+                    service_id = order_details.get('service_id')
+                    link = order_details.get('link')
+                    quantity = order_details.get('quantity')
+                    api_key = os.getenv('AGENCY_API_KEY')
+                    url = 'https://nilidon.com/api/v2'
+                    params = {
+                        'action': 'add',
+                        'service': service_id,
+                        'link': link,
+                        'quantity': quantity,
+                        'key': api_key
+                    }
+                    logger.info(f"Placing agency order: {params}")
+                    try:
+                        response = requests.get(url, params=params, timeout=15)
+                        data = response.json()
+                        agency_order_id = data.get('order')
+                        logger.info(f"Agency API response: {data}")
+                        if agency_order_id:
+                            bot.send_message(chat_id, f"\u2705 Payment received! Your order is confirmed and being processed.\nAgency Order ID: <code>{agency_order_id}</code>", parse_mode='HTML')
+                        else:
+                            bot.send_message(chat_id, "\u2705 Payment received! But failed to place order with agency. Please contact support.")
+                            if ADMIN_ID:
+                                bot.send_message(ADMIN_ID, f"[Webhook] Payment received for {chat_id}, but failed to place order. Data: {data}")
+                    except Exception as e:
+                        logger.error(f"Failed to place agency order: {e}")
+                        bot.send_message(chat_id, "\u2705 Payment received! But there was an error placing your order. Please contact support.")
+                        if ADMIN_ID:
+                            bot.send_message(ADMIN_ID, f"[Webhook] Payment received for {chat_id}, but error placing order: {e}")
+                else:
+                    bot.send_message(chat_id, "\u2705 Payment received! But order details are missing. Please contact support.")
+                    if ADMIN_ID:
+                        bot.send_message(ADMIN_ID, f"[Webhook] Payment received for {chat_id}, but order details missing.")
+                logger.info(f"Notified user {chat_id} for payment link {payment_link_id}")
+            except Exception as e:
+                logger.error(f"Failed to notify user {chat_id}: {e}")
+                if ADMIN_ID:
+                    bot.send_message(ADMIN_ID, f"[Webhook] Failed to notify user {chat_id}: {e}")
+            # Clean up mapping after notification
+            payment_link_to_chat.pop(payment_link_id, None)
+            payment_link_to_order.pop(payment_link_id, None)
+            save_mapping()
+            save_order_mapping()
+        else:
+            logger.warning(f"No chat_id found for payment link {payment_link_id}")
+            if ADMIN_ID:
+                bot.send_message(ADMIN_ID, f"[Webhook] No chat_id found for payment link {payment_link_id}")
+    return '', 200
+
+# --- RUN BOTH FLASK AND TELEGRAM BOT ---
+def run_flask():
+    app.run(host="0.0.0.0", port=5000)
+
+def run_bot():
+    bot.infinity_polling(timeout=10, long_polling_timeout=5)
+
 if __name__ == '__main__':
     logger.info("=== BOT IS STARTING ===")
     try:
@@ -1560,17 +1666,18 @@ if __name__ == '__main__':
             if not os.path.exists(directory):
                 os.makedirs(directory)
                 logger.info(f"Created directory: {directory}")
-        
         load_profit_margin()
-        
         # This check ensures that if the API call fails, the bot will not start.
         if not load_services_from_api():
             logger.critical("Bot cannot start without services. Please check the AGENCY_API_KEY and the provider's status.")
             sys.exit("Could not load services from the agency API. Exiting.")
-        
+        # --- Start Flask in a thread ---
+        flask_thread = threading.Thread(target=run_flask)
+        flask_thread.daemon = True
+        flask_thread.start()
         logger.info("Bot polling started...")
         # Use faster polling for more responsive bot with better timeout handling
-        bot.infinity_polling(timeout=10, long_polling_timeout=5)
+        run_bot()
         # --- Start the admin order status notifier thread at startup ---
         threading.Thread(target=admin_order_status_notifier, daemon=True).start()
     except Exception as e:
