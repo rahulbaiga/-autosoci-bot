@@ -419,13 +419,14 @@ def get_quantity_keyboard(chat_id=None):
             price_per_1k = float(service.get('price', 0))
             valid_quantities = []
             for q in quantities:
-                price = (price_per_1k / 1000) * q
+                # Use full price calculation with markup
+                price = (price_per_1k / 1000) * q + (PROFIT_MARKUP_RUPEES / 1000) * q
                 if price >= 1:
                     valid_quantities.append(q)
             if not valid_quantities:
                 # fallback: minimum quantity for ₹1
                 if price_per_1k > 0:
-                    min_q = int((1 / (price_per_1k / 1000)) + 0.999)  # round up
+                    min_q = int((1 / ((price_per_1k + PROFIT_MARKUP_RUPEES) / 1000)) + 0.999)  # round up
                     valid_quantities = [min_q]
                 else:
                     valid_quantities = [100]
@@ -814,7 +815,8 @@ def handle_custom_quantity_input(message):
             bot.reply_to(message, "Service not found. Please start over.")
             return
         price_per_1k = float(service.get('price', 0))
-        total_price = (price_per_1k / 1000) * quantity
+        # Use full price calculation with markup
+        total_price = (price_per_1k / 1000) * quantity + (PROFIT_MARKUP_RUPEES / 1000) * quantity
         if total_price < 1:
             bot.reply_to(message, "❌ The minimum order value is ₹1. Please enter a higher quantity.")
             bot.send_message(message.chat.id, "Please enter a new quantity (must be at least ₹1 in value):")
@@ -1343,7 +1345,7 @@ def process_quantity(message, quantity):
     if not (min_q <= quantity <= max_q):
         bot.reply_to(message, f"❌ Quantity must be between {min_q} and {max_q} for this service.")
         # Ask for quantity again
-        bot.send_message(message.chat.id, "Please choose a quantity:", reply_markup=get_quantity_keyboard(chat_id))
+        bot.send_message(message.chat.id, "Please choose a quantity:", reply_markup=get_quantity_keyboard(message.chat.id))
         return
 
     push_state(message.chat.id, {'quantity': quantity})
