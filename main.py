@@ -63,6 +63,9 @@ pending_orders = {}
 # --- TRACK PROCESSED ORDERS TO PREVENT MULTIPLE PROCESSING ---
 processed_orders = set()
 
+# --- TRACK ALL ORDERS FOR ADMIN PANEL & STATUS NOTIFICATION ---
+all_orders = {}  # order_id: {user_id, service, link, quantity, status, ...}
+
 # Import the mapping if using the same file, or import from webhook server if shared
 try:
     from razorpay_webhook_server import payment_link_to_chat
@@ -110,6 +113,46 @@ try:
 except ImportError:
     payment_link_to_chat = {}
     payment_link_to_order = {}
+    MAPPING_FILE = 'payment_link_to_chat.json'
+    ORDER_MAPPING_FILE = 'payment_link_to_order.json'
+    def load_mapping():
+        global payment_link_to_chat
+        if os.path.exists(MAPPING_FILE):
+            try:
+                with open(MAPPING_FILE, 'r') as f:
+                    payment_link_to_chat = json.load(f)
+                logger.info(f"[main.py] Loaded mapping from {MAPPING_FILE}")
+            except Exception as e:
+                logger.error(f"[main.py] Failed to load mapping: {e}")
+        else:
+            logger.info(f"[main.py] No existing mapping file found.")
+    def save_mapping():
+        try:
+            with open(MAPPING_FILE, 'w') as f:
+                json.dump(payment_link_to_chat, f)
+            logger.info(f"[main.py] Saved mapping to {MAPPING_FILE}")
+        except Exception as e:
+            logger.error(f"[main.py] Failed to save mapping: {e}")
+    def load_order_mapping():
+        global payment_link_to_order
+        if os.path.exists(ORDER_MAPPING_FILE):
+            try:
+                with open(ORDER_MAPPING_FILE, 'r') as f:
+                    payment_link_to_order = json.load(f)
+                logger.info(f"[main.py] Loaded order mapping from {ORDER_MAPPING_FILE}")
+            except Exception as e:
+                logger.error(f"[main.py] Failed to load order mapping: {e}")
+        else:
+            logger.info(f"[main.py] No existing order mapping file found.")
+    def save_order_mapping():
+        try:
+            with open(ORDER_MAPPING_FILE, 'w') as f:
+                json.dump(payment_link_to_order, f)
+            logger.info(f"[main.py] Saved order mapping to {ORDER_MAPPING_FILE}")
+        except Exception as e:
+            logger.error(f"[main.py] Failed to save order mapping: {e}")
+    load_mapping()
+    load_order_mapping()
 
 def load_profit_margin():
     """Loads the profit margin from a file, otherwise uses default."""
@@ -484,6 +527,7 @@ def get_admin_keyboard():
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(
         types.InlineKeyboardButton('📊 View Total Orders', callback_data='admin_total_orders'),
+        types.InlineKeyboardButton('📦 View All Orders', callback_data='admin_all_orders'),
         types.InlineKeyboardButton('🔄 Bot Status', callback_data='admin_status')
     )
     markup.add(
@@ -796,6 +840,18 @@ def handle_phone_input(message):
     final_amount = (float(service['price']) / 1000) * quantity * PROFIT_MARGIN
     order_id = f"{message.chat.id}_{int(time.time())}"
     push_state(message.chat.id, {'order_id': order_id, 'step': 'payment'})
+    # --- Track order for admin panel ---
+    all_orders[order_id] = {
+        'user_id': message.chat.id,
+        'service': service['service'],
+        'platform': service['platform'],
+        'category': service['category'],
+        'link': link,
+        'quantity': quantity,
+        'status': 'pending_payment',
+        'created_at': time.strftime('%Y-%m-%d %H:%M:%S'),
+        'order_id': order_id
+    }
     create_and_send_payment_link(message.chat.id, final_amount, order_id, customer_name="User", customer_email="test@example.com", customer_contact=phone)
     bot.send_message(message.chat.id, (
         "💳 <b>Payment Instructions</b>\n\n"
@@ -963,6 +1019,10 @@ def handle_admin_approval(call):
                 parse_mode='HTML'
             )
             threading.Thread(target=poll_order_status, args=(user_id, agency_order_id), daemon=True).start()
+            # --- Update all_orders status ---
+            if order_id in all_orders:
+                all_orders[order_id]['status'] = 'processing'
+                all_orders[order_id]['agency_order_id'] = agency_order_id
         else:
             bot.answer_callback_query(call.id, "Failed to place order with agency!", show_alert=True)
             bot.send_message(user_id, "❌ <b>There was an error placing your order with the agency. Please contact support.</b>", parse_mode='HTML')
@@ -979,6 +1039,9 @@ def handle_admin_approval(call):
             "🆔 <b>Your Order ID:</b> <code>{order_id}</code>", 
             parse_mode='HTML', disable_web_page_preview=True)
         state.clear()
+        # --- Update all_orders status ---
+        if order_id in all_orders:
+            all_orders[order_id]['status'] = 'rejected'
     
     # Only remove the inline keyboard, do not edit the message text
     try:
@@ -1378,6 +1441,10 @@ def create_and_send_payment_link(chat_id, amount, order_id, customer_name="User"
         except Exception as e:
             logger.error(f"[ERROR] Could not save payment link mapping: {e}")
         # Do NOT send the payment link in Telegram
+        # --- Update all_orders with payment link id ---
+        if order_id in all_orders:
+            all_orders[order_id]['payment_link_id'] = payment_link_id
+            all_orders[order_id]['status'] = 'payment_link_created'
     else:
         bot.send_message(chat_id, "❌ Failed to create payment link. Please try again later.")
 
@@ -1397,6 +1464,55 @@ def check_payment_status(message):
         bot.reply_to(message, f"Payment link {payment_link_id} is mapped to chat_id {chat_id}. Order details: {order_details}")
     else:
         bot.reply_to(message, f"No mapping found for payment link {payment_link_id}.")
+
+# --- Add admin callback for viewing all orders ---
+@bot.callback_query_handler(func=lambda call: call.data == 'admin_all_orders')
+def handle_admin_all_orders(call):
+    if str(call.message.chat.id) not in ADMIN_ID.split(','):
+        return
+    bot.answer_callback_query(call.id)
+    if not all_orders:
+        bot.edit_message_text("No orders yet.", call.message.chat.id, call.message.message_id, reply_markup=get_admin_keyboard())
+        return
+    # Show a summary of all orders (last 10 for brevity)
+    order_list = list(all_orders.values())[-10:]
+    msg = '<b>📦 Last 10 Orders:</b>\n\n'
+    for o in order_list:
+        msg += (f"<b>Order ID:</b> {o['order_id']}\n"
+                f"<b>User:</b> {o['user_id']}\n"
+                f"<b>Service:</b> {o['service']}\n"
+                f"<b>Platform:</b> {o['platform']}\n"
+                f"<b>Quantity:</b> {o['quantity']}\n"
+                f"<b>Status:</b> {o.get('status', 'unknown')}\n"
+                f"<b>Created:</b> {o.get('created_at', '')}\n"
+                f"{'-'*20}\n")
+    bot.edit_message_text(msg, call.message.chat.id, call.message.message_id, parse_mode='HTML', reply_markup=get_admin_keyboard())
+
+# --- Background thread to notify admin of order statuses every 5 minutes ---
+def admin_order_status_notifier():
+    while True:
+        try:
+            if all_orders:
+                status_msgs = []
+                for order_id, o in all_orders.items():
+                    agency_order_id = o.get('agency_order_id')
+                    if agency_order_id:
+                        status_data = get_order_status(agency_order_id)
+                        status = status_data.get('status', 'unknown') if status_data else 'unknown'
+                        o['status'] = status
+                        status_msgs.append(f"Order {order_id}: {status}")
+                if status_msgs:
+                    msg = '<b>⏰ Order Status Update:</b>\n' + '\n'.join(status_msgs)
+                    for admin in ADMIN_ID.split(','):
+                        admin = admin.strip()
+                        if admin:
+                            try:
+                                bot.send_message(admin, msg, parse_mode='HTML')
+                            except Exception as e:
+                                logger.error(f"Failed to send status update to admin {admin}: {e}")
+        except Exception as e:
+            logger.error(f"Error in admin_order_status_notifier: {e}")
+        time.sleep(300)  # 5 minutes
 
 if __name__ == '__main__':
     logger.info("=== BOT IS STARTING ===")
@@ -1418,6 +1534,8 @@ if __name__ == '__main__':
         logger.info("Bot polling started...")
         # Use faster polling for more responsive bot with better timeout handling
         bot.infinity_polling(timeout=10, long_polling_timeout=5)
+        # --- Start the admin order status notifier thread at startup ---
+        threading.Thread(target=admin_order_status_notifier, daemon=True).start()
     except Exception as e:
         logger.critical(f"An unrecoverable error occurred: {e}", exc_info=True)
     finally:
