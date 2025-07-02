@@ -24,6 +24,8 @@ BOT_TOKEN = os.getenv('BOT_TOKEN')
 AGENCY_API_KEY = os.getenv('AGENCY_API_KEY')
 UPI_ID = os.getenv('UPI_ID')
 ADMIN_ID = os.getenv('ADMIN_ID')
+RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID")
+RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET")
 
 # --- Logger Setup ---
 # Configure logging to file and console
@@ -60,6 +62,54 @@ bot_users = set()
 pending_orders = {}
 # --- TRACK PROCESSED ORDERS TO PREVENT MULTIPLE PROCESSING ---
 processed_orders = set()
+
+# Import the mapping if using the same file, or import from webhook server if shared
+try:
+    from razorpay_webhook_server import payment_link_to_chat
+    MAPPING_FILE = 'payment_link_to_chat.json'
+    ORDER_MAPPING_FILE = 'payment_link_to_order.json'
+    payment_link_to_order = {}
+    def load_mapping():
+        global payment_link_to_chat
+        if os.path.exists(MAPPING_FILE):
+            try:
+                with open(MAPPING_FILE, 'r') as f:
+                    payment_link_to_chat = json.load(f)
+                logger.info(f"[main.py] Loaded mapping from {MAPPING_FILE}")
+            except Exception as e:
+                logger.error(f"[main.py] Failed to load mapping: {e}")
+        else:
+            logger.info(f"[main.py] No existing mapping file found.")
+    def save_mapping():
+        try:
+            with open(MAPPING_FILE, 'w') as f:
+                json.dump(payment_link_to_chat, f)
+            logger.info(f"[main.py] Saved mapping to {MAPPING_FILE}")
+        except Exception as e:
+            logger.error(f"[main.py] Failed to save mapping: {e}")
+    def load_order_mapping():
+        global payment_link_to_order
+        if os.path.exists(ORDER_MAPPING_FILE):
+            try:
+                with open(ORDER_MAPPING_FILE, 'r') as f:
+                    payment_link_to_order = json.load(f)
+                logger.info(f"[main.py] Loaded order mapping from {ORDER_MAPPING_FILE}")
+            except Exception as e:
+                logger.error(f"[main.py] Failed to load order mapping: {e}")
+        else:
+            logger.info(f"[main.py] No existing order mapping file found.")
+    def save_order_mapping():
+        try:
+            with open(ORDER_MAPPING_FILE, 'w') as f:
+                json.dump(payment_link_to_order, f)
+            logger.info(f"[main.py] Saved order mapping to {ORDER_MAPPING_FILE}")
+        except Exception as e:
+            logger.error(f"[main.py] Failed to save order mapping: {e}")
+    load_mapping()
+    load_order_mapping()
+except ImportError:
+    payment_link_to_chat = {}
+    payment_link_to_order = {}
 
 def load_profit_margin():
     """Loads the profit margin from a file, otherwise uses default."""
@@ -342,8 +392,9 @@ def get_summary_keyboard():
     markup.add(types.InlineKeyboardButton('⬅️ Back', callback_data="back_to_previous"))
     return markup
 
-def get_payment_keyboard():
+def get_payment_keyboard(upi_id=None, amount=None, order_id=None):
     markup = types.InlineKeyboardMarkup(row_width=2)
+    # Do NOT add Pay with UPI App button, as Telegram does not support upi:// URLs in buttons
     markup.add(
         types.InlineKeyboardButton('✅ Confirm Order', callback_data="confirm_payment_order"),
         types.InlineKeyboardButton('⬅️ Back', callback_data="back_to_previous")
@@ -716,9 +767,61 @@ def handle_custom_quantity_input(message):
 def handle_summary_callback(call):
     logger.info(f"User {call.message.chat.id} selected: {call.data}")
     bot.answer_callback_query(call.id)
-    
-    push_state(call.message.chat.id, {'step': 'payment'})
-    send_payment_instructions(call.message)
+    state = get_current_state(call.message.chat.id)
+    service = find_service_by_id(state.get('service_id'))
+    quantity = state.get('quantity')
+    link = state.get('link')
+    if not all([service, quantity, link]):
+        bot.send_message(call.message.chat.id, "❌ Error: Order information is incomplete. Please start over.")
+        return
+    # Ask for real phone number
+    push_state(call.message.chat.id, {'step': 'awaiting_phone'})
+    bot.send_message(call.message.chat.id, "📱 Please enter your 10-digit mobile number to receive your payment link:")
+
+@bot.message_handler(func=lambda m: get_current_state(m.chat.id).get('step') == 'awaiting_phone')
+def handle_phone_input(message):
+    phone = message.text.strip()
+    # Validate phone number: 10 digits, starts with 6-9, no all repeating digits
+    if not (phone.isdigit() and len(phone) == 10 and phone[0] in '6789' and len(set(phone)) > 2):
+        bot.reply_to(message, "❌ Invalid phone number. Please enter a valid 10-digit Indian mobile number (no repeating digits). Example: 9876543210")
+        return
+    state = get_current_state(message.chat.id)
+    service = find_service_by_id(state.get('service_id'))
+    quantity = state.get('quantity')
+    link = state.get('link')
+    if not all([service, quantity, link]):
+        bot.send_message(message.chat.id, "❌ Error: Order information is incomplete. Please start over.")
+        return
+    # Calculate final amount with profit margin
+    final_amount = (float(service['price']) / 1000) * quantity * PROFIT_MARGIN
+    order_id = f"{message.chat.id}_{int(time.time())}"
+    push_state(message.chat.id, {'order_id': order_id, 'step': 'payment'})
+    create_and_send_payment_link(message.chat.id, final_amount, order_id, customer_name="User", customer_email="test@example.com", customer_contact=phone)
+    bot.send_message(message.chat.id, (
+        "💳 <b>Payment Instructions</b>\n\n"
+        "We have sent a payment link to your phone number via SMS.\n"
+        "1️⃣ Open the SMS you received from Razorpay.\n"
+        "2️⃣ Click the payment link in the SMS and complete your payment in your browser.\n"
+        "3️⃣ Once payment is successful, your order will be processed automatically!\n\n"
+        "❗ <b>Do NOT pay twice for the same order.</b>\n\n"
+        "If you face any issues, contact support.\n"
+        "<a href='https://chat.whatsapp.com/GvLbK18vIfELWWQgKYyoKw'>Join our WhatsApp Support Group</a>"
+    ), parse_mode='HTML', disable_web_page_preview=True)
+    # Send step-by-step screenshots to help the user, with captions
+    step_images_with_captions = [
+        ('assets/step 1.jpg', 'Step 1: Open the SMS you received from Razorpay.'),
+        ('assets/step 2.jpg', 'Step 2: Tap the payment link in the SMS.'),
+        ('assets/step3.jpg', 'Step 3: The payment page will open in your browser.'),
+        ('assets/step 4.jpg', 'Step 4: Enter your UPI/Bank details or select your payment app.'),
+        ('assets/step 5.jpg', 'Step 5: Complete the payment as shown.'),
+        ('assets/step 6 .jpg', 'Step 6: You will see a confirmation after successful payment.'),
+    ]
+    for img_path, caption in step_images_with_captions:
+        try:
+            with open(img_path, 'rb') as img_file:
+                bot.send_photo(message.chat.id, img_file, caption=caption)
+        except Exception as e:
+            logger.warning(f"Could not send image {img_path}: {e}")
 
 @bot.message_handler(content_types=['photo'], func=lambda m: get_current_state(m.chat.id).get('step') == 'payment')
 def handle_payment_proof(message):
@@ -1218,7 +1321,7 @@ def send_payment_instructions(message):
     
     try:
         with open(qr_path, "rb") as qr:
-            bot.send_photo(message.chat.id, qr, caption=caption, parse_mode="HTML", reply_markup=get_payment_keyboard())
+            bot.send_photo(message.chat.id, qr, caption=caption, parse_mode="HTML", reply_markup=get_payment_keyboard(upi_id, amount, order_id))
     except Exception as e:
         logger.error(f"Failed to send QR code to user {message.chat.id}: {e}")
         bot.reply_to(message, "❌ Error sending payment instructions. Please try again.")
@@ -1231,6 +1334,69 @@ def send_payment_instructions(message):
         logger.warning(f"Could not remove QR code file {qr_path}: {e}")
     
     logger.info(f"Payment instructions sent successfully to user {message.chat.id}")
+
+def create_and_send_payment_link(chat_id, amount, order_id, customer_name="User", customer_email="test@example.com", customer_contact="9999999999"):
+    url = "https://api.razorpay.com/v1/payment_links"
+    data = {
+        "amount": int(amount * 100),  # Razorpay expects paise
+        "currency": "INR",
+        "accept_partial": False,
+        "reference_id": order_id,
+        "description": "Order Payment",
+        "customer": {
+            "name": customer_name,
+            "email": customer_email,
+            "contact": customer_contact
+        },
+        "notify": {
+            "sms": True,
+            "email": False
+        },
+        "reminder_enable": True
+    }
+    response = requests.post(url, auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET), json=data)
+    result = response.json()
+    logger.info(f'Razorpay response: {result}')  # Log the full Razorpay response for debugging
+    payment_link_id = result.get('id')
+    payment_url = result.get('short_url') or result.get('payment_url')
+    if payment_link_id and payment_url:
+        payment_link_to_chat[payment_link_id] = chat_id
+        # Save order details for webhook server to use
+        state = get_current_state(chat_id)
+        service_id = state.get('service_id')
+        link = state.get('link')
+        quantity = state.get('quantity')
+        payment_link_to_order[payment_link_id] = {
+            'service_id': service_id,
+            'link': link,
+            'quantity': quantity
+        }
+        try:
+            save_mapping()
+            save_order_mapping()
+            logger.info(f"[INFO] Saved payment link mapping for {payment_link_id} -> {chat_id}")
+        except Exception as e:
+            logger.error(f"[ERROR] Could not save payment link mapping: {e}")
+        # Do NOT send the payment link in Telegram
+    else:
+        bot.send_message(chat_id, "❌ Failed to create payment link. Please try again later.")
+
+@bot.message_handler(commands=['check_payment'])
+def check_payment_status(message):
+    if str(message.from_user.id) != str(ADMIN_ID):
+        bot.reply_to(message, "You are not authorized to use this command.")
+        return
+    args = message.text.split()
+    if len(args) < 2:
+        bot.reply_to(message, "Usage: /check_payment <payment_link_id>")
+        return
+    payment_link_id = args[1]
+    chat_id = payment_link_to_chat.get(payment_link_id)
+    order_details = payment_link_to_order.get(payment_link_id)
+    if chat_id:
+        bot.reply_to(message, f"Payment link {payment_link_id} is mapped to chat_id {chat_id}. Order details: {order_details}")
+    else:
+        bot.reply_to(message, f"No mapping found for payment link {payment_link_id}.")
 
 if __name__ == '__main__':
     logger.info("=== BOT IS STARTING ===")
