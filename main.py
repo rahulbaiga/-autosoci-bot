@@ -15,9 +15,9 @@ import hmac
 import hashlib
 
 # --- PROFIT MARGIN (GLOBAL) ---
-# This will be loaded from a file, with a default of 40%
-PROFIT_MARGIN = 1.4
-PROFIT_MARGIN_FILE = 'profit_margin.txt'
+# This will be loaded from a file, with a default of 3 rupees per 1k
+PROFIT_MARKUP_RUPEES = 3.0
+PROFIT_MARKUP_FILE = 'profit_margin.txt'
 
 # --- Load Environment Variables ---
 # This setup works for both local development (with .env) and production (e.g., Railway)
@@ -158,25 +158,25 @@ except ImportError:
     load_order_mapping()
 
 def load_profit_margin():
-    """Loads the profit margin from a file, otherwise uses default."""
-    global PROFIT_MARGIN
+    """Loads the profit markup (in rupees) from a file, otherwise uses default."""
+    global PROFIT_MARKUP_RUPEES
     try:
-        if os.path.exists(PROFIT_MARGIN_FILE):
-            with open(PROFIT_MARGIN_FILE, 'r') as f:
-                margin = float(f.read().strip())
-                PROFIT_MARGIN = margin
-                logger.info(f"Loaded profit margin of {PROFIT_MARGIN} from file.")
+        if os.path.exists(PROFIT_MARKUP_FILE):
+            with open(PROFIT_MARKUP_FILE, 'r') as f:
+                markup = float(f.read().strip())
+                PROFIT_MARKUP_RUPEES = markup
+                logger.info(f"Loaded profit markup of {PROFIT_MARKUP_RUPEES} from file.")
     except (ValueError, TypeError):
-        PROFIT_MARGIN = 1.4 # Default to 1.4 if file is corrupt
-        logger.warning(f"Could not parse profit margin file. Using default: {PROFIT_MARGIN}")
+        PROFIT_MARKUP_RUPEES = 3.0 # Default to 3 if file is corrupt
+        logger.warning(f"Could not parse profit markup file. Using default: {PROFIT_MARKUP_RUPEES}")
 
-def save_profit_margin(margin):
-    """Saves the profit margin to a file."""
-    global PROFIT_MARGIN
-    PROFIT_MARGIN = margin
-    with open(PROFIT_MARGIN_FILE, 'w') as f:
-        f.write(str(margin))
-    logger.info(f"Saved new profit margin to file: {margin}")
+def save_profit_margin(markup):
+    """Saves the profit markup (in rupees) to a file."""
+    global PROFIT_MARKUP_RUPEES
+    PROFIT_MARKUP_RUPEES = markup
+    with open(PROFIT_MARKUP_FILE, 'w') as f:
+        f.write(str(markup))
+    logger.info(f"Saved new profit markup to file: {markup}")
 
 def categorize_service(api_service):
     """
@@ -240,44 +240,31 @@ def categorize_service(api_service):
 def load_services_from_api():
     """Fetches services from the agency API and structures them for the bot."""
     global loaded_services, services_by_id
-    
     api_key = os.getenv('AGENCY_API_KEY')
     if not api_key:
         logger.critical("FATAL: AGENCY_API_KEY environment variable not set.")
         return False
-        
     url = f"https://nilidon.com/api/v2?action=services&key={api_key}"
-    
     logger.info("Attempting to fetch services from agency API...")
-    
     try:
         response = requests.get(url, timeout=20)
         response.raise_for_status()
         api_data = response.json()
-        
         logger.info(f"Successfully fetched {len(api_data)} services from API")
-        
         platforms = {}
         services_by_id.clear()  # Clear old data
-        
         for service_data in api_data:
             platform_name, category_name = categorize_service(service_data)
-
             if not platform_name:
                 logger.debug(f"Skipping service '{service_data['name']}' - platform not supported")
                 continue
-
             if platform_name not in platforms:
                 platforms[platform_name] = {}
             if category_name not in platforms[platform_name]:
                 platforms[platform_name][category_name] = []
-
-            # Treat the 'rate' from the API as the direct price in INR.
             price_inr = float(service_data['rate'])
-            
-            # Apply profit margin to the price for user display
-            price_with_margin = price_inr * PROFIT_MARGIN
-
+            # Apply fixed rupee markup per 1k
+            price_with_markup = price_inr + PROFIT_MARKUP_RUPEES
             bot_service = {
                 'id': int(service_data['service']),
                 'api_service_id': int(service_data['service']),
@@ -285,28 +272,22 @@ def load_services_from_api():
                 'category': category_name,
                 'service': service_data['name'],
                 'price': price_inr,  # Original price from API
-                'price_with_margin': price_with_margin,  # Price with profit margin
+                'price_with_margin': price_with_markup,  # Price with fixed rupee markup
                 'min': int(service_data.get('min', 0)),
                 'max': int(service_data.get('max', 1000000)),
                 'description': service_data.get('category', 'No description available.'),
                 'refill': service_data.get('refill', False),
                 'cancel': service_data.get('cancel', False)
             }
-            
             platforms[platform_name][category_name].append(bot_service)
             services_by_id[bot_service['id']] = bot_service
-
         loaded_services = platforms
-        
-        # Log summary of loaded services
         total_services = len(services_by_id)
         platform_summary = {platform: len(categories) for platform, categories in platforms.items()}
         logger.info(f"Successfully loaded {total_services} services from API:")
         for platform, service_count in platform_summary.items():
             logger.info(f"  - {platform}: {service_count} services")
-        
         return True
-
     except requests.exceptions.RequestException as e:
         logger.critical(f"FATAL: Could not fetch services from API: {e}")
         return False
@@ -369,7 +350,7 @@ def get_service_keyboard(platform, category):
     markup = types.InlineKeyboardMarkup(row_width=1)
     for service in services:
         # Use the pre-calculated price with profit margin
-        price_per_1000 = service.get('price_with_margin', float(service['price']) * PROFIT_MARGIN)
+        price_per_1000 = service.get('price_with_margin', float(service['price']) + PROFIT_MARKUP_RUPEES)
         btn_text = f"{service['service']} (₹{price_per_1000:.2f}/1k)"
         # Use the unique service ID in the callback_data
         markup.add(types.InlineKeyboardButton(btn_text, callback_data=f"service_{service['id']}"))
@@ -395,7 +376,14 @@ def get_link_prompt(platform, service_name):
         if 'Follower' in service_name:
             return '🔗 Great! You chose Instagram Followers. Please send your Instagram <b>profile link</b>.'
         elif 'Like' in service_name or 'View' in service_name or 'Comment' in service_name or 'Story' in service_name or 'Share' in service_name or 'Save' in service_name:
-            return '🔗 Great! You chose Instagram engagement. Please send your Instagram <b>post or story link</b>.'
+            return (
+                f"✅ You selected: <b>{service_name}</b>!\n\n"
+                "📸 <b>Step 1:</b> Open Instagram and find the post or story you want to boost.\n"
+                "🔗 <b>Step 2:</b> Tap \"Share\" and copy the link.\n\n"
+                "✍️ <b>Now, please paste your Instagram post or story link below.</b>\n"
+                "(Example: https://instagram.com/p/XXXXXXXXX)\n\n"
+                "ℹ️ <i>Make sure your post or story is public so we can process your order!</i>"
+            )
     elif platform == 'Telegram':
         if 'Member' in service_name:
             return '🔗 Great! You chose Telegram Members. Please send your <b>channel or group link</b>.'
@@ -852,7 +840,13 @@ def handle_summary_callback(call):
         return
     # Ask for real phone number
     push_state(call.message.chat.id, {'step': 'awaiting_phone'})
-    bot.send_message(call.message.chat.id, "📱 Please enter your 10-digit mobile number to receive your payment link:")
+    bot.send_message(
+        call.message.chat.id,
+        "📱 <b>Enter Your Mobile Number</b>\n\n"
+        "Please type your <b>10-digit phone number</b> below to receive your payment link via SMS.\n\n"
+        "🔒 <i>Your number is safe and only used for payment confirmation.</i>",
+        parse_mode='HTML'
+    )
 
 @bot.message_handler(func=lambda m: get_current_state(m.chat.id).get('step') == 'awaiting_phone')
 def handle_phone_input(message):
@@ -869,7 +863,7 @@ def handle_phone_input(message):
         bot.send_message(message.chat.id, "❌ Error: Order information is incomplete. Please start over.")
         return
     # Calculate final amount with profit margin
-    final_amount = (float(service['price']) / 1000) * quantity * PROFIT_MARGIN
+    final_amount = (float(service['price']) / 1000) * quantity + (PROFIT_MARKUP_RUPEES / 1000) * quantity
     order_id = f"{message.chat.id}_{int(time.time())}"
     push_state(message.chat.id, {'order_id': order_id, 'step': 'payment'})
     # --- Track order for admin panel ---
@@ -928,7 +922,7 @@ def handle_payment_proof(message):
 
     # Calculate prices for admin notification
     actual_cost = (float(service['price']) / 1000) * quantity
-    user_price = actual_cost * PROFIT_MARGIN
+    user_price = actual_cost + (PROFIT_MARKUP_RUPEES / 1000) * quantity
     profit = user_price - actual_cost
 
     # Ensure payment_proofs directory exists
@@ -1147,7 +1141,7 @@ def show_service_details(chat_id, message_id):
         return
 
     # Use the pre-calculated price with profit margin
-    price_per_1000_user = service.get('price_with_margin', float(service['price']) * PROFIT_MARGIN)
+    price_per_1000_user = service.get('price_with_margin', float(service['price']) + PROFIT_MARKUP_RUPEES)
 
     # Generate example prices safely and dynamically
     example_prices = ""
@@ -1259,7 +1253,7 @@ def handle_admin_callbacks(call):
         bot.edit_message_text(f"📊 Total Orders Processed: {total}", call.message.chat.id, call.message.message_id, reply_markup=get_admin_keyboard())
     elif call.data == 'admin_status':
         bot.answer_callback_query(call.id)
-        bot.edit_message_text(f"Bot Status:\n- Running Smoothly\n- Profit Margin: {(PROFIT_MARGIN - 1)*100:.0f}%", call.message.chat.id, call.message.message_id, reply_markup=get_admin_keyboard())
+        bot.edit_message_text(f"Bot Status:\n- Running Smoothly\n- Profit Margin: {(PROFIT_MARKUP_RUPEES / 1000) * 100:.0f}%", call.message.chat.id, call.message.message_id, reply_markup=get_admin_keyboard())
     elif call.data == 'admin_balance':
         url = f"https://nilidon.com/api/v2?action=balance&key={AGENCY_API_KEY}"
         try:
@@ -1279,18 +1273,16 @@ def handle_admin_callbacks(call):
 
 @bot.callback_query_handler(func=lambda call: call.data == 'set_margin')
 def handle_set_margin_prompt(call):
-    """Prompts the admin to set a new profit margin."""
+    """Prompts the admin to set a new profit markup in rupees."""
     if str(call.message.chat.id) not in ADMIN_ID.split(','):
         bot.answer_callback_query(call.id, "You are not authorized.", show_alert=True)
         return
-    
     push_state(call.message.chat.id, {'step': 'awaiting_margin'})
-    
     bot.answer_callback_query(call.id)
     bot.edit_message_text(
-        f"Please enter the new profit margin <b>percentage</b>.\n\n"
-        f"For example, for a 40% margin, enter `40`.\n"
-        f"The current margin is `{(PROFIT_MARGIN - 1) * 100:.0f}%`.",
+        f"Please enter the new profit markup <b>in rupees per 1,000 units</b>.\n\n"
+        f"For example, to add ₹3 to every 1,000 units, enter <code>3</code>.\n"
+        f"The current markup is <code>₹{PROFIT_MARKUP_RUPEES:.2f}</code> per 1,000 units.",
         call.message.chat.id,
         call.message.message_id,
         parse_mode='HTML'
@@ -1298,25 +1290,20 @@ def handle_set_margin_prompt(call):
 
 @bot.message_handler(func=lambda m: get_current_state(m.chat.id).get('step') == 'awaiting_margin')
 def handle_new_margin(message):
-    """Saves the new profit margin from the admin."""
+    """Saves the new profit markup from the admin."""
     if str(message.chat.id) not in ADMIN_ID.split(','):
         return
-
     try:
-        margin_percent = float(message.text)
-        if margin_percent < 0:
-            raise ValueError("Margin cannot be negative.")
-        
-        new_margin = 1 + (margin_percent / 100.0)
-        save_profit_margin(new_margin)
-        
-        bot.reply_to(message, f"✅ Profit margin has been updated to {margin_percent}%.")
-        
-        pop_state(message.chat.id) 
+        markup_rupees = float(message.text)
+        if markup_rupees < 0:
+            raise ValueError("Markup cannot be negative.")
+        save_profit_margin(markup_rupees)
+        load_services_from_api()  # Reload all services with new markup
+        bot.reply_to(message, f"✅ Profit markup has been updated to ₹{markup_rupees:.2f} per 1,000 units. All prices are now updated.")
+        pop_state(message.chat.id)
         bot.send_message(message.chat.id, "Returning to the admin panel.", reply_markup=get_admin_keyboard())
-
     except (ValueError, TypeError):
-        bot.reply_to(message, "❌ Invalid input. Please enter a number (e.g., 40).")
+        bot.reply_to(message, "❌ Invalid input. Please enter a number (e.g., 3).")
 
 def show_order_summary(chat_id, message_id_to_edit=None):
     state = get_current_state(chat_id)
@@ -1329,7 +1316,7 @@ def show_order_summary(chat_id, message_id_to_edit=None):
         return
 
     # Calculate final price with profit margin
-    final_amount = (float(service['price']) / 1000) * quantity * PROFIT_MARGIN
+    final_amount = (float(service['price']) / 1000) * quantity + (PROFIT_MARKUP_RUPEES / 1000) * quantity
 
     summary_text = (
         f"<b>📝 Order Summary</b>\n\n"
@@ -1378,7 +1365,7 @@ def send_payment_instructions(message):
         return
 
     # Calculate final amount with profit margin
-    final_amount = (float(service['price']) / 1000) * quantity * PROFIT_MARGIN
+    final_amount = (float(service['price']) / 1000) * quantity + (PROFIT_MARKUP_RUPEES / 1000) * quantity
     
     # Generate unique order ID with timestamp and user ID
     order_id = f"{message.chat.id}_{int(time.time())}"
@@ -1620,7 +1607,56 @@ def razorpay_webhook():
                         agency_order_id = data.get('order')
                         logger.info(f"Agency API response: {data}")
                         if agency_order_id:
-                            bot.send_message(chat_id, f"\u2705 Payment received! Your order is confirmed and being processed.\nAgency Order ID: <code>{agency_order_id}</code>", parse_mode='HTML')
+                            # Build order info
+                            user_id = order_details.get('user_id', chat_id)
+                            order_id = order_details.get('order_id', 'N/A')
+                            platform = order_details.get('platform', 'N/A')
+                            category = order_details.get('category', 'N/A')
+                            service = order_details.get('service', 'N/A')
+                            link = order_details.get('link', 'N/A')
+                            quantity = order_details.get('quantity', 'N/A')
+                            amount = order_details.get('amount', 'N/A')
+
+                            # User message
+                            user_message = (
+                                "🎉 <b>Payment Successful!</b> 🎉\n\n"
+                                "✅ <b>Your order is confirmed and being processed.</b>\n"
+                                f"🆔 <b>Order ID:</b> <code>{order_id}</code>\n"
+                                f"📱 <b>Platform:</b> {platform}\n"
+                                f"📂 <b>Category:</b> {category}\n"
+                                f"🔧 <b>Service:</b> {service}\n"
+                                f"🔗 <b>Link:</b> {link}\n"
+                                f"📊 <b>Quantity:</b> {quantity}\n"
+                                f"💰 <b>Amount:</b> ₹{amount}\n"
+                                f"🏷️ <b>Agency Order ID:</b> <code>{agency_order_id}</code>\n\n"
+                                "⏳ <b>Status:</b> Processing\n\n"
+                                "🚀 <b>We will notify you as soon as your order is delivered!</b>\n"
+                                "Thank you for choosing AUTOSOCI! 💚"
+                            )
+                            bot.send_message(chat_id, user_message, parse_mode='HTML')
+
+                            # Admin message
+                            admin_message = (
+                                "🆕 <b>New Paid Order Received!</b> 🎉\n\n"
+                                f"👤 <b>User ID:</b> {user_id}\n"
+                                f"🆔 <b>Order ID:</b> {order_id}\n"
+                                f"📱 <b>Platform:</b> {platform}\n"
+                                f"📂 <b>Category:</b> {category}\n"
+                                f"🔧 <b>Service:</b> {service}\n"
+                                f"🔗 <b>Link:</b> {link}\n"
+                                f"📊 <b>Quantity:</b> {quantity}\n"
+                                f"💰 <b>Amount:</b> ₹{amount}\n"
+                                f"🏷️ <b>Agency Order ID:</b> <code>{agency_order_id}</code>\n\n"
+                                "⏳ <b>Status:</b> Processing\n\n"
+                                "📞 <b>Support:</b> https://chat.whatsapp.com/GvLbK18vIfELWWQgKYyoKw"
+                            )
+                            for admin in ADMIN_ID.split(','):
+                                admin = admin.strip()
+                                if admin:
+                                    try:
+                                        bot.send_message(admin, admin_message, parse_mode='HTML')
+                                    except Exception as e:
+                                        logger.error(f"Failed to send order info to admin {admin}: {e}")
                         else:
                             bot.send_message(chat_id, "\u2705 Payment received! But failed to place order with agency. Please contact support.")
                             if ADMIN_ID:
