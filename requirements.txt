@@ -4,3 +4,4 @@ requests
 qrcode
 Pillow 
 flask
+pending_orders.json

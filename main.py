@@ -13,10 +13,11 @@ import sys
 from flask import Flask, request, abort
 import hmac
 import hashlib
+from io import BytesIO
 
 # --- PROFIT MARGIN (GLOBAL) ---
 # This will be loaded from a file, with a default of 3 rupees per 1k
-PROFIT_MARKUP_RUPEES = 3.0
+PROFIT_MARKUP_PERCENT = 0.0
 PROFIT_MARKUP_FILE = 'profit_margin.txt'
 
 # --- Load Environment Variables ---
@@ -159,24 +160,24 @@ except ImportError:
 
 def load_profit_margin():
     """Loads the profit markup (in rupees) from a file, otherwise uses default."""
-    global PROFIT_MARKUP_RUPEES
+    global PROFIT_MARKUP_PERCENT
     try:
         if os.path.exists(PROFIT_MARKUP_FILE):
             with open(PROFIT_MARKUP_FILE, 'r') as f:
                 markup = float(f.read().strip())
-                PROFIT_MARKUP_RUPEES = markup
-                logger.info(f"Loaded profit markup of {PROFIT_MARKUP_RUPEES} from file.")
+                PROFIT_MARKUP_PERCENT = markup
+                logger.info(f"Loaded profit markup percent of {PROFIT_MARKUP_PERCENT} from file.")
     except (ValueError, TypeError):
-        PROFIT_MARKUP_RUPEES = 3.0 # Default to 3 if file is corrupt
-        logger.warning(f"Could not parse profit markup file. Using default: {PROFIT_MARKUP_RUPEES}")
+        PROFIT_MARKUP_PERCENT = 0.0 # Default to 0% if file is corrupt
+        logger.warning(f"Could not parse profit markup file. Using default: {PROFIT_MARKUP_PERCENT}")
 
-def save_profit_margin(markup):
-    """Saves the profit markup (in rupees) to a file."""
-    global PROFIT_MARKUP_RUPEES
-    PROFIT_MARKUP_RUPEES = markup
+def save_profit_margin(percent):
+    """Saves the profit markup (in percent) to a file."""
+    global PROFIT_MARKUP_PERCENT
+    PROFIT_MARKUP_PERCENT = percent
     with open(PROFIT_MARKUP_FILE, 'w') as f:
-        f.write(str(markup))
-    logger.info(f"Saved new profit markup to file: {markup}")
+        f.write(str(percent))
+    logger.info(f"Saved new profit markup percent to file: {percent}")
 
 def categorize_service(api_service):
     """
@@ -264,7 +265,7 @@ def load_services_from_api():
                 platforms[platform_name][category_name] = []
             price_inr = float(service_data['rate'])
             # Apply fixed rupee markup per 1k
-            price_with_markup = price_inr + PROFIT_MARKUP_RUPEES
+            price_with_markup = price_inr + PROFIT_MARKUP_PERCENT
             bot_service = {
                 'id': int(service_data['service']),
                 'api_service_id': int(service_data['service']),
@@ -349,10 +350,8 @@ def get_service_keyboard(platform, category):
     services = loaded_services.get(platform, {}).get(category, [])
     markup = types.InlineKeyboardMarkup(row_width=1)
     for service in services:
-        # Use the pre-calculated price with profit margin
-        price_per_1000 = service.get('price_with_margin', float(service['price']) + PROFIT_MARKUP_RUPEES)
+        price_per_1000 = float(service['price']) * (1 + PROFIT_MARKUP_PERCENT / 100)
         btn_text = f"{service['service']} (₹{price_per_1000:.2f}/1k)"
-        # Use the unique service ID in the callback_data
         markup.add(types.InlineKeyboardButton(btn_text, callback_data=f"service_{service['id']}"))
     markup.add(types.InlineKeyboardButton('⬅️ Back', callback_data="back_to_previous"))
     return markup
@@ -419,14 +418,13 @@ def get_quantity_keyboard(chat_id=None):
             price_per_1k = float(service.get('price', 0))
             valid_quantities = []
             for q in quantities:
-                # Use full price calculation with markup
-                price = (price_per_1k / 1000) * q + (PROFIT_MARKUP_RUPEES / 1000) * q
+                price = calculate_user_price(price_per_1k, q)
                 if price >= 1:
                     valid_quantities.append(q)
             if not valid_quantities:
                 # fallback: minimum quantity for ₹1
                 if price_per_1k > 0:
-                    min_q = int((1 / ((price_per_1k + PROFIT_MARKUP_RUPEES) / 1000)) + 0.999)  # round up
+                    min_q = int((1 / ((price_per_1k + PROFIT_MARKUP_PERCENT / 100) / 1000)) + 0.999)  # round up
                     valid_quantities = [min_q]
                 else:
                     valid_quantities = [100]
@@ -548,6 +546,8 @@ def get_admin_keyboard():
         types.InlineKeyboardButton("📢 Send Announcement", callback_data="send_announcement"),
         types.InlineKeyboardButton("💵 Check API Balance", callback_data="admin_balance")
     )
+    # Add Reset Price button
+    markup.add(types.InlineKeyboardButton("🧹 Reset Price (No Markup)", callback_data="reset_price"))
     return markup
 
 @bot.message_handler(commands=['start'])
@@ -816,7 +816,7 @@ def handle_custom_quantity_input(message):
             return
         price_per_1k = float(service.get('price', 0))
         # Use full price calculation with markup
-        total_price = (price_per_1k / 1000) * quantity + (PROFIT_MARKUP_RUPEES / 1000) * quantity
+        total_price = calculate_user_price(price_per_1k, quantity)
         if total_price < 1:
             bot.reply_to(message, "❌ The minimum order value is ₹1. Please enter a higher quantity.")
             bot.send_message(message.chat.id, "Please enter a new quantity (must be at least ₹1 in value):")
@@ -865,7 +865,7 @@ def handle_phone_input(message):
         bot.send_message(message.chat.id, "❌ Error: Order information is incomplete. Please start over.")
         return
     # Calculate final amount with profit margin
-    final_amount = (float(service['price']) / 1000) * quantity + (PROFIT_MARKUP_RUPEES / 1000) * quantity
+    final_amount = calculate_user_price(float(service['price']), quantity)
     order_id = f"{message.chat.id}_{int(time.time())}"
     push_state(message.chat.id, {'order_id': order_id, 'step': 'payment'})
     # --- Track order for admin panel ---
@@ -919,7 +919,7 @@ def handle_payment_proof(message):
 
     # Calculate prices for admin notification
     actual_cost = (float(service['price']) / 1000) * quantity
-    user_price = actual_cost + (PROFIT_MARKUP_RUPEES / 1000) * quantity
+    user_price = calculate_user_price(float(service['price']), quantity)
     profit = user_price - actual_cost
 
     # Ensure payment_proofs directory exists
@@ -1031,6 +1031,44 @@ def handle_admin_approval(call):
             bot.answer_callback_query(call.id, "Service configuration error!", show_alert=True)
             return
         logger.info(f"Placing order for user {user_id} with service_id {service_id}")
+
+        # --- NEW: Check agency balance before placing order ---
+        actual_cost = (float(service['price']) / 1000) * state['quantity']
+        balance = get_agency_balance()
+        if balance is None or balance < actual_cost:
+            # Save to pending_orders.json
+            pending_orders = load_pending_orders()
+            pending_orders.append({
+                'user_id': user_id,
+                'order_id': order_id,
+                'service_id': service_id,
+                'link': state['link'],
+                'quantity': state['quantity'],
+                'timestamp': time.time(),
+                'status': 'pending_balance',
+                'service': service,
+                'state': state
+            })
+            save_pending_orders(pending_orders)
+            # Notify admin only
+            admin_msg = (
+                f"⚠️ <b>Order NOT placed due to insufficient agency balance.</b>\n\n"
+                f"👤 <b>User ID:</b> {user_id}\n"
+                f"🆔 <b>Order ID:</b> {order_id}\n"
+                f"🔧 <b>Service:</b> {service['service']}\n"
+                f"🔗 <b>Link:</b> {state['link']}\n"
+                f"📊 <b>Quantity:</b> {state['quantity']}\n"
+                f"💵 <b>Cost (Actual):</b> ₹{actual_cost:.2f}\n"
+                f"💰 <b>Current API Balance:</b> ₹{balance if balance is not None else 'N/A'}\n\n"
+                f"Please recharge the agency balance. The bot will auto-process this order once balance is sufficient."
+            )
+            for admin in ADMIN_ID.split(','):
+                if admin.strip():
+                    bot.send_message(admin.strip(), admin_msg, parse_mode='HTML')
+            bot.answer_callback_query(call.id, "Order pending: Insufficient agency balance. Admin notified.", show_alert=True)
+            return
+        # --- END NEW ---
+
         agency_order_id = place_agency_order(service_id, state['link'], state['quantity'])
         if agency_order_id:
             user_state[user_id] = {'step_stack': [{'step': 'processing', 'agency_order_id': agency_order_id}]}
@@ -1138,7 +1176,7 @@ def show_service_details(chat_id, message_id):
         return
 
     # Use the pre-calculated price with profit margin
-    price_per_1000_user = service.get('price_with_margin', float(service['price']) + PROFIT_MARKUP_RUPEES)
+    price_per_1000_user = float(service['price']) * (1 + PROFIT_MARKUP_PERCENT / 100)
 
     # Generate example prices safely and dynamically
     example_prices = ""
@@ -1250,7 +1288,7 @@ def handle_admin_callbacks(call):
         bot.edit_message_text(f"📊 Total Orders Processed: {total}", call.message.chat.id, call.message.message_id, reply_markup=get_admin_keyboard())
     elif call.data == 'admin_status':
         bot.answer_callback_query(call.id)
-        bot.edit_message_text(f"Bot Status:\n- Running Smoothly\n- Profit Margin: {(PROFIT_MARKUP_RUPEES / 1000) * 100:.0f}%", call.message.chat.id, call.message.message_id, reply_markup=get_admin_keyboard())
+        bot.edit_message_text(f"Bot Status:\n- Running Smoothly\n- Profit Margin: {(PROFIT_MARKUP_PERCENT / 100) * 100:.0f}%", call.message.chat.id, call.message.message_id, reply_markup=get_admin_keyboard())
     elif call.data == 'admin_balance':
         url = f"https://nilidon.com/api/v2?action=balance&key={AGENCY_API_KEY}"
         try:
@@ -1277,9 +1315,9 @@ def handle_set_margin_prompt(call):
     push_state(call.message.chat.id, {'step': 'awaiting_margin'})
     bot.answer_callback_query(call.id)
     bot.edit_message_text(
-        f"Please enter the new profit markup <b>in rupees per 1,000 units</b>.\n\n"
-        f"For example, to add ₹3 to every 1,000 units, enter <code>3</code>.\n"
-        f"The current markup is <code>₹{PROFIT_MARKUP_RUPEES:.2f}</code> per 1,000 units.",
+        f"Please enter the new profit markup <b>in percent per 1,000 units</b>.\n\n"
+        f"For example, to add 10% to every 1,000 units, enter <code>10</code>.\n"
+        f"The current markup is <code>{PROFIT_MARKUP_PERCENT:.2f}%</code> per 1,000 units.",
         call.message.chat.id,
         call.message.message_id,
         parse_mode='HTML'
@@ -1291,16 +1329,16 @@ def handle_new_margin(message):
     if str(message.chat.id) not in ADMIN_ID.split(','):
         return
     try:
-        markup_rupees = float(message.text)
-        if markup_rupees < 0:
+        percent = float(message.text)
+        if percent < 0:
             raise ValueError("Markup cannot be negative.")
-        save_profit_margin(markup_rupees)
+        save_profit_margin(percent)
         load_services_from_api()  # Reload all services with new markup
-        bot.reply_to(message, f"✅ Profit markup has been updated to ₹{markup_rupees:.2f} per 1,000 units. All prices are now updated.")
+        bot.reply_to(message, f"✅ Profit markup has been updated to {percent:.2f}% per 1,000 units. All prices are now updated.")
         pop_state(message.chat.id)
         bot.send_message(message.chat.id, "Returning to the admin panel.", reply_markup=get_admin_keyboard())
     except (ValueError, TypeError):
-        bot.reply_to(message, "❌ Invalid input. Please enter a number (e.g., 3).")
+        bot.reply_to(message, "❌ Invalid input. Please enter a number (e.g., 10).")
 
 def show_order_summary(chat_id, message_id_to_edit=None):
     state = get_current_state(chat_id)
@@ -1313,7 +1351,7 @@ def show_order_summary(chat_id, message_id_to_edit=None):
         return
 
     # Calculate final price with profit margin
-    final_amount = (float(service['price']) / 1000) * quantity + (PROFIT_MARKUP_RUPEES / 1000) * quantity
+    final_amount = calculate_user_price(float(service['price']), quantity)
 
     summary_text = (
         f"<b>📝 Order Summary</b>\n\n"
@@ -1362,7 +1400,7 @@ def send_payment_instructions(message):
         return
 
     # Calculate final amount with profit margin
-    final_amount = (float(service['price']) / 1000) * quantity + (PROFIT_MARKUP_RUPEES / 1000) * quantity
+    final_amount = calculate_user_price(float(service['price']), quantity)
     
     # Generate unique order ID with timestamp and user ID
     order_id = f"{message.chat.id}_{int(time.time())}"
@@ -1462,11 +1500,23 @@ def create_and_send_payment_link(chat_id, amount, order_id, customer_name="User"
             logger.info(f"[INFO] Saved payment link mapping for {payment_link_id} -> {chat_id}")
         except Exception as e:
             logger.error(f"[ERROR] Could not save payment link mapping: {e}")
-        # Do NOT send the payment link in Telegram
         # --- Update all_orders with payment link id ---
         if order_id in all_orders:
             all_orders[order_id]['payment_link_id'] = payment_link_id
             all_orders[order_id]['status'] = 'payment_link_created'
+        # --- Send QR code or link based on amount ---
+        if amount < 2000:
+            # Generate QR code from payment link
+            qr = qrcode.QRCode(box_size=10, border=4)
+            qr.add_data(payment_url)
+            qr.make(fit=True)
+            img = qr.make_image(fill='black', back_color='white')
+            bio = BytesIO()
+            img.save(bio, format='PNG')
+            bio.seek(0)
+            bot.send_photo(chat_id, photo=bio, caption="Scan this QR code to pay securely via Razorpay.\n\nIf you face any issues, let us know!")
+        else:
+            bot.send_message(chat_id, f"Click the link below to pay securely via Razorpay:\n{payment_url}")
     else:
         # Only show this error if amount >= 1 (should not happen, but fallback)
         if amount >= 1:
@@ -1628,11 +1678,12 @@ def razorpay_webhook():
                                 f"🏷️ <b>Agency Order ID:</b> <code>{agency_order_id}</code>\n\n"
                                 "⏳ <b>Status:</b> Processing\n\n"
                                 "🚀 <b>We will notify you as soon as your order is delivered!</b>\n"
-                                "Thank you for choosing AUTOSOCI! 💚"
+                                "Thank you for choosing AUTOSOCI! 💚\n\n"
+                                "📞 <b>Support:</b> https://chat.whatsapp.com/GvLbK18vIfELWWQgKYyoKw"
                             )
                             bot.send_message(chat_id, user_message, parse_mode='HTML')
 
-                            # Admin message
+                            # Admin message (NO WhatsApp link)
                             admin_message = (
                                 "🆕 <b>New Paid Order Received!</b> 🎉\n\n"
                                 f"👤 <b>User ID:</b> {user_id}\n"
@@ -1644,8 +1695,7 @@ def razorpay_webhook():
                                 f"📊 <b>Quantity:</b> {quantity}\n"
                                 f"💰 <b>Amount:</b> ₹{amount}\n"
                                 f"🏷️ <b>Agency Order ID:</b> <code>{agency_order_id}</code>\n\n"
-                                "⏳ <b>Status:</b> Processing\n\n"
-                                "📞 <b>Support:</b> https://chat.whatsapp.com/GvLbK18vIfELWWQgKYyoKw"
+                                "⏳ <b>Status:</b> Processing\n"
                             )
                             for admin in ADMIN_ID.split(','):
                                 admin = admin.strip()
@@ -1706,6 +1756,100 @@ def handle_payment_help(call):
     except Exception as e:
         bot.send_message(call.message.chat.id, "❌ Unable to send help screenshot. Please contact support.")
     bot.answer_callback_query(call.id)
+
+@bot.callback_query_handler(func=lambda call: call.data == 'reset_price')
+def handle_reset_price(call):
+    if str(call.message.chat.id) not in ADMIN_ID.split(','):
+        bot.answer_callback_query(call.id, "You are not authorized.", show_alert=True)
+        return
+    save_profit_margin(0)  # Set profit margin to 0
+    load_services_from_api()  # Reload all services with no markup
+    bot.answer_callback_query(call.id)
+    bot.edit_message_text(
+        "✅ All service prices have been reset to agency rates (no markup). All user-facing prices now match the agency API.",
+        call.message.chat.id,
+        call.message.message_id,
+        reply_markup=get_admin_keyboard()
+    )
+
+def calculate_user_price(base_price, quantity):
+    # base_price is per 1000 units
+    total_base = (base_price / 1000) * quantity
+    return total_base * (1 + PROFIT_MARKUP_PERCENT / 100)
+
+def get_agency_balance():
+    """Fetches the current agency API balance as a float. Returns None on error."""
+    url = f"https://nilidon.com/api/v2?action=balance&key={AGENCY_API_KEY}"
+    try:
+        response = requests.get(url, timeout=10)
+        data = response.json()
+        balance = float(data.get('balance', 0))
+        return balance
+    except Exception as e:
+        logger.error(f"Failed to fetch agency API balance: {e}")
+        return None
+
+PENDING_ORDERS_FILE = 'pending_orders.json'
+
+def load_pending_orders():
+    try:
+        with open(PENDING_ORDERS_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+def save_pending_orders(orders):
+    with open(PENDING_ORDERS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(orders, f, ensure_ascii=False, indent=2)
+
+def process_pending_orders_periodically():
+    while True:
+        try:
+            pending_orders = load_pending_orders()
+            if not pending_orders:
+                time.sleep(60)
+                continue
+            balance = get_agency_balance()
+            if balance is None:
+                logger.warning("Could not fetch agency balance for pending order processing.")
+                time.sleep(60)
+                continue
+            new_pending = []
+            for order in pending_orders:
+                actual_cost = (float(order['service']['price']) / 1000) * order['quantity']
+                if balance >= actual_cost:
+                    agency_order_id = place_agency_order(order['service_id'], order['link'], order['quantity'])
+                    if agency_order_id:
+                        # Notify user as usual
+                        user_state[order['user_id']] = {'step_stack': [{'step': 'processing', 'agency_order_id': agency_order_id}]}
+                        bot.send_message(
+                            order['user_id'],
+                            f"✅ <b>Your payment has been approved and order is now being processed!</b>\n"
+                            f"Agency Order ID: <code>{agency_order_id}</code>\n"
+                            f"Thank you for your trust!",
+                            parse_mode='HTML'
+                        )
+                        threading.Thread(target=poll_order_status, args=(order['user_id'], agency_order_id), daemon=True).start()
+                        # Update all_orders status if present
+                        if order['order_id'] in all_orders:
+                            all_orders[order['order_id']]['status'] = 'processing'
+                            all_orders[order['order_id']]['agency_order_id'] = agency_order_id
+                        # Deduct the cost from balance for this loop
+                        balance -= actual_cost
+                    else:
+                        # If failed to place order, keep it pending
+                        new_pending.append(order)
+                else:
+                    # Still not enough balance, keep it pending
+                    new_pending.append(order)
+            if len(new_pending) != len(pending_orders):
+                save_pending_orders(new_pending)
+        except Exception as e:
+            logger.error(f"Error in processing pending orders: {e}")
+        time.sleep(60)
+
+# Start the background thread when the bot starts
+threading.Thread(target=process_pending_orders_periodically, daemon=True).start()
 
 if __name__ == '__main__':
     logger.info("=== BOT IS STARTING ===")
