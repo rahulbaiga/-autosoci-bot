@@ -411,10 +411,33 @@ def get_quantity_keyboard(chat_id=None):
     # Dynamically generate quantity options based on service price so that each is worth at least ₹1
     markup = types.InlineKeyboardMarkup(row_width=2)
     quantities = [100, 500, 1000, 5000]
+    service_unit = ''
     if chat_id is not None:
         state = get_current_state(chat_id)
         service = find_service_by_id(state.get('service_id'))
         if service:
+            # Determine the service "unit" (e.g., followers, likes, views, etc.)
+            service_name_lower = service['service'].lower()
+            if 'follower' in service_name_lower:
+                service_unit = 'followers'
+            elif 'like' in service_name_lower:
+                service_unit = 'likes'
+            elif 'view' in service_name_lower:
+                service_unit = 'views'
+            elif 'subscribe' in service_name_lower:
+                service_unit = 'subscribers'
+            elif 'member' in service_name_lower:
+                service_unit = 'members'
+            elif 'comment' in service_name_lower:
+                service_unit = 'comments'
+            elif 'share' in service_name_lower:
+                service_unit = 'shares'
+            elif 'reaction' in service_name_lower:
+                service_unit = 'reactions'
+            elif 'story' in service_name_lower:
+                service_unit = 'stories'
+            else:
+                service_unit = 'units'
             price_per_1k = float(service.get('price', 0))
             valid_quantities = []
             for q in quantities:
@@ -429,7 +452,7 @@ def get_quantity_keyboard(chat_id=None):
                 else:
                     valid_quantities = [100]
             for q in valid_quantities:
-                markup.add(types.InlineKeyboardButton(str(q), callback_data=f"quantity_{q}"))
+                markup.add(types.InlineKeyboardButton(f"{service_unit} {q}", callback_data=f"quantity_{q}"))
         else:
             for q in quantities:
                 markup.add(types.InlineKeyboardButton(str(q), callback_data=f"quantity_{q}"))
