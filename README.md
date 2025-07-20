@@ -284,4 +284,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 [![Telegram](https://img.shields.io/badge/Telegram-@AUTOSOCI_Bot-0088cc?style=flat-square&logo=telegram)](https://t.me/your_bot_username)
 [![WhatsApp](https://img.shields.io/badge/WhatsApp-Support-25D366?style=flat-square&logo=whatsapp)](https://chat.whatsapp.com/GvLbK18vIfELWWQgKYyoKw)
 
-</div> 
+</div> #   a u t o s o c i . b o t  
+ 
